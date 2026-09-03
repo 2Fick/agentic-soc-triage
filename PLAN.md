@@ -54,6 +54,10 @@
 ## Phase 5 : Documentation / démo CV
 - [ ] README complet avec architecture, captures d'écran, verdicts d'exemple.
 - [ ] Support de démo (vidéo courte ou walkthrough) pour entretien.
+- [ ] Pour la démo dashboard Wazuh : pas de reset de données, filtrer par plage de temps (sélecteur
+      en haut à droite des sections du dashboard) sur la fenêtre où les scripts d'attaque ont
+      tourné, pour exclure le bruit des tests/incidents précédents. Décision prise le 2026-09-03 :
+      plus réaliste qu'un environnement reset (un vrai dashboard SOC a toujours de l'historique).
 
 ---
 
