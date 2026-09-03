@@ -18,16 +18,24 @@
 - [x] Serveurs MCP pour VirusTotal et AbuseIPDB, testés avec les vraies clés (Streamable HTTP,
       voir `docs/decisions.md` pour le choix du transport).
 
-## Phase 3 : Agent Gemini - construit, validation manuelle en cours
+## Phase 3 : Agent Gemini - construit et validé structurellement
 - [x] Clé API Gemini dédiée à ce projet, testée (`gemini-3.6-flash`, `gemini-2.5-flash` est
       désactivé pour les nouvelles clés, voir `docs/decisions.md`).
-- [x] Workflow n8n complet importé : webhook Wazuh vers agent Gemini (tool-calling agentique vers
-      les 2 serveurs MCP, sortie JSON structurée forcée) vers Slack.
+- [x] Workflow n8n complet importé et publié : webhook Wazuh vers agent Gemini (tool-calling
+      agentique vers les 2 serveurs MCP, sortie JSON structurée forcée) vers Slack.
 - [x] Prompt de triage rédigé (sévérité, verdict, action auto_close/escalate, résumé, raisonnement,
       biais volontaire vers l'escalade en cas de doute).
-- [ ] Créer le compte owner n8n (localhost:5678), lier la credential Gemini au node "Gemini Chat
-      Model", activer le workflow. Voir `n8n/README.md`.
-- [ ] Test de bout en bout (webhook réel, verdict, message Slack).
+- [x] Compte owner n8n créé, credential Gemini liée, workflow publié.
+- [x] Chaque maillon validé individuellement en inspectant les données réelles d'exécution :
+      webhook reçoit bien l'alerte (`$json.body.alert`), agent appelle les outils MCP avec de
+      vraies données (VirusTotal/AbuseIPDB), schéma de sortie structuré correct, message Slack
+      envoyé avec succès (execution 4).
+- [ ] Un run complet de bout en bout (webhook -> verdict -> Slack, sans erreur sur aucun maillon)
+      reste à confirmer : les dernières tentatives ont buté sur une instabilité réseau
+      intermittente (`fetch failed` / 503) entre ce process n8n et l'API Gemini, indépendante du
+      code (curl et des scripts Node isolés atteignent l'API sans problème). Un `retryOnFail` a été
+      ajouté sur le node agent. À réessayer après stabilisation du réseau (ex. après redémarrage
+      complet de la machine).
 
 ## Phase 4 : Tests d'attaque simulée
 - [ ] Scénarios de type Atomic Red Team (ou équivalent léger, gratuit).
