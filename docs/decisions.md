@@ -71,3 +71,31 @@ même flot).
 **Leçon** : dans un pipeline qui déclenche un appel LLM par alerte, le filtre de déclenchement
 doit être pensé dès le départ pour exclure le bruit de fond (conformité, scans périodiques), pas
 seulement le niveau de sévérité brut d'une règle Wazuh isolée.
+
+**Suite** : en creusant, le module de détection de vulnérabilités (CVE) présentait le même risque
+(CVE Critical = niveau 13, High = niveau 10, les deux au-dessus du seuil de déclenchement, avec
+600+ CVE détectées sur les paquets installés) et a été désactivé par la même logique. Le SCA
+tournait aussi côté agent Windows (scan CIS séparé de celui du manager), désactivé via la
+configuration partagée (`config/agent.conf`). Après ces trois désactivations, plus aucun flot
+constaté sur une nouvelle série de tests.
+
+## 2026-09-03 : Règles de détection custom pour les scénarios d'attaque
+
+**Contexte** : hypothèse de départ du projet ("le ruleset par défaut de Wazuh couvre déjà la
+plupart des techniques Atomic Red Team via Sysmon") vérifiée fausse en pratique pour certains cas.
+Le ruleset par défaut contient bien des règles Sysmon (`0800-sysmon_id_1.xml`,
+`0860-sysmon_id_13.xml`, etc.), mais leur déclenchement s'est avéré peu fiable lors des tests :
+la règle intégrée pour PowerShell encodé (92057) n'a fini par se déclencher correctement qu'après
+un redémarrage complet du manager (`wazuh-control restart`, pas un simple `docker compose
+restart`).
+
+**Décision** : écrire des règles custom dans `wazuh/config/local_rules.xml` pour les 3 techniques
+simulées, en s'appuyant sur la structure exacte des événements Sysmon capturés sur cette machine
+(vérifiée via `wazuh-logtest` et l'archivage complet temporaire, voir méthode dans le code). Deux
+des trois règles (T1059.001 encodage PowerShell, T1053.005 tâche planifiée) sont confirmées
+fonctionnelles avec de vraies alertes de niveau 12 et tags MITRE ATT&CK corrects. La troisième
+(T1547.001, clé de registre Run) reste un problème ouvert : la structure de l'événement capturé
+correspond exactement à ce que la règle attend (vérifié champ par champ), mais ni la règle custom
+ni la règle intégrée équivalente (92300/92301) ne se déclenchent pour ce cas précis, pour une
+raison non identifiée à ce stade. À reprendre en Phase 5 si le temps le permet, sinon documenté
+comme limitation connue plutôt que laissé silencieux.

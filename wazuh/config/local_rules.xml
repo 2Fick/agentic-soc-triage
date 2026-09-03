@@ -1,0 +1,46 @@
+<!--
+  Custom Wazuh rules, written for this project, matching the 3 attack simulation scripts in
+  attacks/. Local IDs (100xxx range, Wazuh convention for user-defined rules) rather than relying
+  on the default Sysmon ruleset directly: field names/structure were confirmed against real
+  Sysmon events captured on this machine (see docs/decisions.md), but a couple of the built-in
+  Sysmon Event ID 1 rules (e.g. 92057, encoded PowerShell command) did not fire reliably against
+  this Wazuh version's classification chain for reasons not fully root-caused. Writing our own,
+  simpler, self-contained rules sidesteps that and keeps this project's "understand and control
+  what runs" pattern (see docs/decisions.md for the same reasoning behind the custom MCP servers).
+-->
+<group name="local,soc_triage_demo,">
+
+  <rule id="100001" level="12">
+    <if_group>windows</if_group>
+    <field name="win.system.channel">^Microsoft-Windows-Sysmon/Operational$</field>
+    <field name="win.system.eventID">^1$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)powershell\.exe.*-(enc|encodedcommand)\b</field>
+    <description>T1059.001 - Base64-encoded PowerShell command execution</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100002" level="12">
+    <if_group>windows</if_group>
+    <field name="win.system.channel">^Microsoft-Windows-Sysmon/Operational$</field>
+    <field name="win.system.eventID">^1$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)schtasks\.exe.*\/create</field>
+    <description>T1053.005 - Scheduled task created (possible persistence)</description>
+    <mitre>
+      <id>T1053.005</id>
+    </mitre>
+  </rule>
+
+  <rule id="100003" level="12">
+    <if_group>windows</if_group>
+    <field name="win.system.channel">^Microsoft-Windows-Sysmon/Operational$</field>
+    <field name="win.system.eventID">^13$</field>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\CurrentVersion\\Run\\</field>
+    <description>T1547.001 - Registry Run key persistence value written</description>
+    <mitre>
+      <id>T1547.001</id>
+    </mitre>
+  </rule>
+
+</group>

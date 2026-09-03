@@ -5,13 +5,13 @@
       CPU, ligne "Virtualisation"). Activée.
 - [x] Décision : Wazuh manager en local via Docker Desktop/WSL2 (voir `docs/decisions.md`).
 
-## Phase 1 : Wazuh
+## Phase 1 : Wazuh - fait
 - [x] Déployer le manager Wazuh (local via Docker, single-node officiel v4.14.7).
-- [x] Câbler le webhook sortant : intégration custom `custom-n8n` (alertes niveau >= 7 vers n8n),
-      vérifiée fonctionnelle (permissions et connectivité réseau testées manuellement).
-- [ ] Configurer un agent Wazuh (Windows local ou machine de test) pour générer des logs, prévu en
-      Phase 4 avec le choix des scénarios d'attaque (le ruleset par défaut couvre déjà la plupart
-      des techniques Atomic Red Team via Sysmon, pas de règle custom nécessaire a priori).
+- [x] Câbler le webhook sortant : intégration custom `custom-n8n` (alertes niveau >= 10 vers n8n,
+      relevé de 7 après un incident de flood, voir `docs/decisions.md`).
+- [x] Agent Wazuh + Sysmon installés sur la machine Windows, connectés et stables.
+- [x] SCA et détection de vulnérabilités désactivés (manager + agent) après un incident de flood
+      d'alertes ayant épuisé le quota Gemini gratuit, voir `docs/decisions.md`.
 
 ## Phase 2 : n8n + MCP - fait
 - [x] Installer n8n en local (npx, données relocalisées sur D:, toujours démarrer via `n8n/start.sh`).
@@ -31,15 +31,25 @@
       vraies données (VirusTotal/AbuseIPDB), schéma de sortie structuré correct, message Slack
       envoyé avec succès (execution 4).
 - [ ] Un run complet de bout en bout (webhook -> verdict -> Slack, sans erreur sur aucun maillon)
-      reste à confirmer : les dernières tentatives ont buté sur une instabilité réseau
-      intermittente (`fetch failed` / 503) entre ce process n8n et l'API Gemini, indépendante du
-      code (curl et des scripts Node isolés atteignent l'API sans problème). Un `retryOnFail` a été
-      ajouté sur le node agent. À réessayer après stabilisation du réseau (ex. après redémarrage
-      complet de la machine).
+      reste à confirmer. Cause probable des erreurs réseau intermittentes rencontrées : le quota
+      gratuit de la clé Gemini épuisé par le flood d'alertes SCA/CVE (voir Phase 4), pas un vrai
+      problème réseau. `retryOnFail` ajouté sur le node agent par précaution. À réessayer une fois
+      le quota reconstitué (le lendemain).
 
-## Phase 4 : Tests d'attaque simulée
-- [ ] Scénarios de type Atomic Red Team (ou équivalent léger, gratuit).
-- [ ] Vérifier la chaîne complète : attaque simulée, alerte Wazuh, triage agent, verdict correct.
+## Phase 4 : Tests d'attaque simulée - construit, 2/3 détections confirmées
+- [x] 3 scénarios écrits (T1059.001, T1053.005, T1547.001), non destructifs, auto-nettoyants,
+      voir `attacks/README.md`.
+- [x] Règles de détection custom écrites (`wazuh/config/local_rules.xml`) après avoir vérifié que
+      le ruleset par défaut ne couvrait pas fiablement tous les cas.
+- [x] T1059.001 (PowerShell encodé) et T1053.005 (tâche planifiée) : détection confirmée, vraies
+      alertes de niveau 12 avec tags MITRE ATT&CK corrects.
+- [ ] T1547.001 (clé de registre Run) : ne se déclenche pas malgré une structure d'événement
+      conforme à ce que la règle attend, cause non identifiée. Limitation connue, voir
+      `docs/decisions.md`.
+- [ ] Test de bout en bout avec l'agent Gemini (bloqué par le quota épuisé, voir Phase 3).
+- [ ] Incident important géré en cours de route : flood de ~330 exécutions n8n causé par le module
+      SCA de Wazuh (une alerte par contrôle de conformité échoué), corrigé en désactivant SCA et
+      la détection de vulnérabilités. Voir `docs/decisions.md`.
 
 ## Phase 5 : Documentation / démo CV
 - [ ] README complet avec architecture, captures d'écran, verdicts d'exemple.

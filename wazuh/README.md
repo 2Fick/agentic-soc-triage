@@ -28,7 +28,10 @@ docker compose up -d
 # 3. Déploie le script d'intégration n8n dans le conteneur (voir "Pourquoi un script à part" ci-dessous)
 ./deploy-integration.sh
 
-# 4. Suit les logs le temps du premier démarrage (~1 min)
+# 4. Déploie les règles de détection custom et la config partagée pour les agents
+./deploy-config.sh
+
+# 5. Suit les logs le temps du premier démarrage (~1 min)
 docker compose logs -f
 ```
 
@@ -54,12 +57,19 @@ docker compose exec wazuh.manager tail -f /var/ossec/logs/integrations.log
 Une ligne `OK sent alert id=... -> HTTP 200` doit apparaître à chaque alerte de niveau >= 7, une
 fois que le workflow n8n écoute sur `http://localhost:5678/webhook/wazuh-alert`.
 
-## Agent Wazuh
+## Agent Wazuh + Sysmon
 
-À installer sur la machine qui génère la télémétrie (ex. ce PC Windows, avec Sysmon pour capturer
-la création de process, PowerShell, etc., que le ruleset Wazuh par défaut sait déjà détecter à
-des niveaux de sévérité élevés, pas besoin de règles custom pour la plupart des techniques Atomic
-Red Team). Étape traitée en Phase 4 avec le choix des scénarios d'attaque.
+Installé sur la machine Windows qui génère la télémétrie (voir `sysmon/` pour la config Sysmon et
+`attacks/` pour les scénarios de test). Contrairement à l'hypothèse de départ, le ruleset Wazuh par
+défaut ne couvre pas fiablement tous les cas Sysmon utiles ici : des règles custom ont été
+ajoutées dans `config/local_rules.xml` (voir `docs/decisions.md`).
+
+**Important** : le module SCA (scan de conformité CIS) et la détection de vulnérabilités (CVE)
+sont désactivés, à la fois côté manager (`ossec.conf`) et côté agent (`config/agent.conf`). Les
+deux génèrent une alerte par contrôle/CVE échoué (des centaines en quelques minutes) et ont
+provoqué un incident réel pendant le développement : voir `docs/decisions.md`. Ne pas les
+réactiver sans mettre en place un filtrage adapté sur l'intégration n8n, sous peine d'épuiser le
+quota gratuit de la clé API Gemini en quelques minutes.
 
 ## Sécurité (rappel pour un usage au-delà de la démo locale)
 
