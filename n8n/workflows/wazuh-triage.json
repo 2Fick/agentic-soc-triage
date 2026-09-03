@@ -21,9 +21,12 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [400, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
       "parameters": {
         "promptType": "define",
-        "text": "=Voici une alerte Wazuh a trier :\n\n{{ JSON.stringify($json.alert, null, 2) }}",
+        "text": "=Voici une alerte Wazuh a trier :\n\n{{ JSON.stringify($json.body.alert, null, 2) }}",
         "hasOutputParser": true,
         "options": {
           "systemMessage": "Tu es un analyste SOC Tier-1 qui trie des alertes Wazuh. Pour chaque alerte recue :\n\n1. Analyse l'alerte (regle declenchee, niveau de severite Wazuh, log complet, hote concerne).\n2. Si l'alerte contient une IP, un domaine ou un hash de fichier exploitable, utilise les outils disponibles (VirusTotal, AbuseIPDB) pour l'enrichir. N'appelle un outil que si une donnee pertinente a verifier est presente - n'invente jamais d'IOC a verifier.\n3. Determine :\n   - severity: \"low\" | \"medium\" | \"high\" | \"critical\"\n   - verdict: \"benign\" | \"suspicious\" | \"malicious\" | \"needs_human_review\"\n   - action: \"auto_close\" | \"escalate\"\n   - summary: resume en 2-3 phrases, comprehensible par un humain, de ce qui s'est passe et pourquoi\n   - reasoning: ton raisonnement (regle + resultats des outils + decision)\n\nRegle de decision pour \"action\" :\n- \"auto_close\" UNIQUEMENT si tu es confiant que c'est un faux positif ou une activite benigne connue (ex. IOC propre sur VirusTotal ET AbuseIPDB, comportement explicable).\n- \"escalate\" dans tous les autres cas, y compris le doute. En cas d'incertitude, d'absence de donnees d'enrichissement, d'erreur d'outil, ou de signal contradictoire : escalade toujours. Ne jamais auto-clore par defaut faute de certitude.\n\nReste factuel. N'invente jamais de donnees que les outils n'ont pas renvoyees."

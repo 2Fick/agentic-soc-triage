@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 n8n/.n8n/
 n8n/n8n.log
+n8n/.cache/
 
 # Generated SSL certs/keys for the local Wazuh indexer/manager/dashboard (self-signed, local-only,
 # but private keys don't belong in git regardless).
