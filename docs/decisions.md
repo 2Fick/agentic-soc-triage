@@ -48,3 +48,26 @@ uniquement). Validé avec de vrais appels (VirusTotal sur 8.8.8.8, AbuseIPDB sur
 **Alternative rejetée** : le community node `n8n-nodes-mcp` supporte le stdio, mais c'est à
 nouveau du code tiers nécessitant l'installation d'un community node, même arbitrage sécurité que
 pour les serveurs MCP eux-mêmes (voir décision ci-dessus).
+
+## 2026-09-03 : Incident - flood d'alertes SCA, désactivation du module SCA
+
+**Contexte** : une fois l'agent Windows connecté et Sysmon actif, environ 338 exécutions n8n se
+sont déclenchées en quelques minutes (335 en erreur). En creusant les logs d'alertes Wazuh, la
+quasi-totalité (306+) venait de la règle 19007, une alerte de niveau 7 générée par le module SCA
+(Security Configuration Assessment) pour **chaque contrôle de conformité échoué** lors d'un scan
+CIS Benchmark. Le scan tournait contre un container dont la distribution ne correspond même pas
+au benchmark testé (CIS Amazon Linux 2023 sur une image qui n'est pas Amazon Linux), garantissant
+un taux d'échec élevé et donc un flot d'alertes. Chaque alerte de niveau >= 7 déclenchait l'agent
+Gemini via l'intégration n8n, ce qui a très probablement épuisé le quota gratuit de la clé API
+(explique les erreurs `fetch failed`/503 rencontrées pendant les tests de la Phase 3).
+
+**Décision** : désactiver entièrement le module SCA (`<sca><enabled>no</enabled></sca>`) : le
+scan de conformité n'apporte rien à l'objectif du projet (détection et triage d'attaques) et son
+coût (bruit, épuisement du quota LLM) dépasse largement sa valeur ici. Le seuil de déclenchement
+de l'intégration n8n est aussi relevé de niveau 7 à niveau 10, en marge de sécurité contre
+d'autres sources de bruit ambiant (ex. une règle PowerShell générique de niveau 9 observée dans le
+même flot).
+
+**Leçon** : dans un pipeline qui déclenche un appel LLM par alerte, le filtre de déclenchement
+doit être pensé dès le départ pour exclure le bruit de fond (conformité, scans périodiques), pas
+seulement le niveau de sévérité brut d'une règle Wazuh isolée.
