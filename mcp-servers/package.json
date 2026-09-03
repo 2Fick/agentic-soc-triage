@@ -1,0 +1,18 @@
+{
+  "name": "agentic-soc-triage-mcp-servers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Custom MCP servers (VirusTotal, AbuseIPDB) that the Gemini triage agent calls as tools, via n8n's MCP Client Tool node over stdio.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "virustotal": "node virustotal-server.js",
+    "abuseipdb": "node abuseipdb-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  }
+}
