@@ -1,0 +1,4 @@
+#!/bin/sh
+# Wrapper expected by wazuh-integratord (must be named "custom-<name>" and executable).
+# Delegates to the actual Python implementation.
+exec python3 /var/ossec/integrations/custom-n8n.py "$@"
