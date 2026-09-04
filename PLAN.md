@@ -35,7 +35,7 @@
       rencontrées la veille venaient du quota Gemini épuisé par le flood d'alertes SCA/CVE (voir
       Phase 4), pas d'un vrai problème réseau. `retryOnFail` conservé sur le node agent.
 
-## Phase 4 : Tests d'attaque simulée - construit, 2/3 détections confirmées
+## Phase 4 : Tests d'attaque simulée - validé
 - [x] 3 scénarios écrits (T1059.001, T1053.005, T1547.001), non destructifs, auto-nettoyants,
       voir `attacks/README.md`.
 - [x] Règles de détection custom écrites (`wazuh/config/local_rules.xml`) après avoir vérifié que
@@ -57,7 +57,13 @@
       structuré confirmé en test réel, voir `docs/decisions.md`.
 
 ## Phase 5 : Documentation / démo CV
-- [ ] README complet avec architecture, captures d'écran, verdicts d'exemple.
+- [x] README complet : architecture, verdict réel en exemple, justification des choix techniques,
+      instructions de reproduction, limitations connues.
+- [x] Vérification avant publication : aucun secret dans les fichiers trackés ni dans l'historique
+      git, identité des commits correcte.
+- [ ] Captures d'écran à ajouter (dashboard Wazuh filtré sur la fenêtre d'attaque, canvas du
+      workflow n8n, message Slack avec un verdict).
+- [ ] Publication sur GitHub.
 - [ ] Support de démo (vidéo courte ou walkthrough) pour entretien.
 - [ ] Pour la démo dashboard Wazuh : pas de reset de données, filtrer par plage de temps (sélecteur
       en haut à droite des sections du dashboard) sur la fenêtre où les scripts d'attaque ont
