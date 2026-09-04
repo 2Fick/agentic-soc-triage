@@ -12,3 +12,6 @@ n8n/.cache/
 # but private keys don't belong in git regardless).
 wazuh/config/wazuh_indexer_ssl_certs/
 attacks/*-marker.txt
+
+# Local screen recordings, not distributed with the project
+screencasts/

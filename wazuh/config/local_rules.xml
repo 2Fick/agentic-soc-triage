@@ -42,6 +42,16 @@
     <description>Suppressed false positive: PowerShell execution policy test file</description>
   </rule>
 
+  <!-- Same rule, different noise source: Windows servicing (DISM) extracts its provider DLLs into
+       a GUID-named subfolder under %TEMP% during normal update/maintenance operations, which also
+       matches "executable dropped in a folder commonly used by malware". This is routine Windows
+       background activity, unrelated to anything simulated in attacks/. -->
+  <rule id="100011" level="0">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\Temp\\\{[0-9A-F-]+\}\\</field>
+    <description>Suppressed false positive: Windows servicing (DISM) temp extraction</description>
+  </rule>
+
   <!-- Escaping note: Wazuh stores Windows paths in targetObject with doubled backslashes, so a
        regex written with \\ (one literal backslash) never matches. It needs \\\\ (two literal
        backslashes). The official ruleset follows the same convention, see built-in rule 92300 in
