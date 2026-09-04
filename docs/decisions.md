@@ -136,6 +136,30 @@ Le workflow déclare le node en `typeVersion: 1.3` et le paramètre était nomm�
 uniquement jusqu'à la version 1.1. Le node ignorait donc silencieusement le champ et appliquait sa
 valeur par défaut. Renommer le paramètre en `inputSchema` a résolu le problème immédiatement.
 
+## 2026-09-04 : Tuning de faux positif et limitation du rythme d'appels
+
+**Faux positif identifié** : la règle intégrée 92213 (« Executable file dropped in folder commonly
+used by malware », niveau 15, donc au-dessus du seuil de déclenchement) se déclenche sur les
+fichiers `__PSScriptPolicyTest_*.ps1` que PowerShell crée lui-même dans `%TEMP%` pour vérifier la
+politique d'exécution. Conséquence concrète : lancer un script `.ps1`, y compris un script légitime,
+générait une alerte de niveau 15 qui déclenchait l'agent de triage. Autrement dit, les scénarios de
+test généraient plus de bruit que de signal. Règle de suppression ajoutée (`100010`, niveau 0 :
+évènement conservé dans les logs mais non alerté). Après tuning, une exécution du scénario
+T1053.005 génère exactement une alerte, la bonne.
+
+**Rythme d'appels** : le garde-fou initial plafonnait les appels sur 24h mais n'imposait aucun
+espacement. Une rafale d'alertes arrivant d'un coup (typiquement au redémarrage de la machine, quand
+l'agent Wazuh vide son tampon) déclenchait plusieurs appels en quelques secondes et provoquait des
+erreurs 429 de rate limit par minute. Un espacement minimum de 8 secondes entre deux appels a été
+ajouté à la même fonction de garde.
+
+**Limite connue** : le compteur du garde-fou s'appuie sur les données statiques du workflow n8n
+(`$getWorkflowStaticData`), qui sont réinitialisées lorsque le workflow est réimporté. Après un
+réimport, le plafond journalier repart donc de zéro. Acceptable ici (le réimport est une opération
+manuelle et rare), mais dans un contexte de production il faudrait un compteur externe au workflow.
+
+## Leçon transverse sur les paramètres de nodes n8n
+
 **Leçon** : vérifier le nom exact des paramètres dans le code source du node pour la `typeVersion`
 utilisée, au lieu de le deviner. Les paramètres inconnus ne provoquent aucune erreur dans n8n, ils
 sont ignorés en silence et la valeur par défaut s'applique, ce qui produit un symptôme trompeur

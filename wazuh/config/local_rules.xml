@@ -32,6 +32,18 @@
     </mitre>
   </rule>
 
+  <!-- Suppression de faux positif. La règle intégrée 92213 ("Executable file dropped in folder
+       commonly used by malware", niveau 15) se déclenche sur les fichiers __PSScriptPolicyTest_*.ps1
+       que PowerShell crée lui-même dans %TEMP% pour vérifier la politique d'exécution, à chaque
+       lancement de script. Sans cette suppression, chaque exécution d'un script légitime génère une
+       alerte de niveau 15 qui déclenche l'agent de triage et consomme du quota LLM pour rien.
+       Niveau 0 = évènement conservé dans les logs mais non alerté. -->
+  <rule id="100010" level="0">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
+    <description>Faux positif supprime : fichier temporaire de test de politique PowerShell</description>
+  </rule>
+
   <rule id="100003" level="12">
     <if_group>windows</if_group>
     <field name="win.system.channel">^Microsoft-Windows-Sysmon/Operational$</field>
