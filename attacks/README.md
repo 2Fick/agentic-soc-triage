@@ -1,30 +1,34 @@
-# Simulation d'attaque
+# Attack simulation
 
-Trois scripts PowerShell, écrits maison (voir `docs/decisions.md` pour le raisonnement : mêmes
-motifs que pour les serveurs MCP), chacun simulant une technique MITRE ATT&CK reconnue, en
-référence à un test Atomic Red Team précis, mais sans installer le framework Atomic Red Team
-lui-même.
+Three PowerShell scripts, each simulating one MITRE ATT&CK technique, written by hand against the
+matching Atomic Red Team test definition rather than installing the Atomic Red Team framework
+itself. Same reasoning as the custom MCP servers: full control over exactly what runs on the
+machine, and something worth understanding rather than executing blindly.
 
-| Script | Technique | Détection attendue |
+| Script | Technique | Expected detection |
 |---|---|---|
-| `T1059.001_powershell_encoded_command.ps1` | Command and Scripting Interpreter: PowerShell | Sysmon Event ID 1 (process creation), commande encodée en base64 |
-| `T1053.005_scheduled_task_persistence.ps1` | Scheduled Task/Job | Sysmon Event ID 1, invocation de `schtasks.exe` |
-| `T1547.001_registry_run_key_persistence.ps1` | Registry Run Keys | Sysmon Event ID 13 (RegistryEvent), écriture sous `HKCU\...\Run` |
+| `T1059.001_powershell_encoded_command.ps1` | Command and Scripting Interpreter: PowerShell | Sysmon event ID 1, base64 encoded command line |
+| `T1053.005_scheduled_task_persistence.ps1` | Scheduled Task/Job | Sysmon event ID 1, `schtasks.exe` invocation |
+| `T1547.001_registry_run_key_persistence.ps1` | Boot or Logon Autostart: Registry Run Keys | Sysmon event ID 13, write under `HKCU\...\Run` |
 
-## Sécurité
+Each run produces exactly one level 12 alert, tagged with the matching technique.
 
-Chaque script est non destructif et se nettoie lui-même (bloc `finally` pour les deux derniers) :
-- Aucun droit administrateur requis (le registre est modifié uniquement sous `HKCU`).
-- Aucun téléchargement, aucune modification hors de ce qui est explicitement listé ci-dessus.
-- La tâche planifiée / la clé de registre sont supprimées immédiatement après création, dans tous
-  les cas (même en cas d'erreur).
+## Safety
 
-## Prérequis
+Every script is non-destructive and cleans up after itself:
 
-- Agent Wazuh installé et connecté sur cette machine (voir `PLAN.md` Phase 4).
-- Sysmon installé avec la config `sysmon/sysmonconfig.xml`.
+- No administrator rights needed, the registry is only touched under `HKCU`.
+- No downloads, no changes beyond what the table above describes.
+- The scheduled task and the registry value are removed straight after creation, including on error
+  (`finally` block).
 
-## Exécution
+## Requirements
+
+- Wazuh agent installed and connected on this machine, see `wazuh/README.md`.
+- Sysmon installed with the configuration in `sysmon/`.
+- Custom rules deployed with `wazuh/deploy-config.sh`.
+
+## Run
 
 ```powershell
 cd attacks
@@ -33,14 +37,15 @@ cd attacks
 .\T1547.001_registry_run_key_persistence.ps1
 ```
 
-## Vérifier la détection
+## Check the detection
 
 ```bash
-# Sur le manager Wazuh : voir les alertes générées par l'agent Windows
+# On the Wazuh manager: alerts raised by the Windows agent
 cd wazuh
 docker compose exec wazuh.manager tail -f /var/ossec/logs/alerts/alerts.log
+
+# And what was forwarded to n8n
+docker compose exec wazuh.manager tail -f /var/ossec/logs/integrations.log
 ```
 
-Puis vérifier que le pipeline complet a réagi : `docker compose exec wazuh.manager tail -f
-/var/ossec/logs/integrations.log` doit montrer l'alerte transmise à n8n, et un message doit
-apparaître sur Slack avec le verdict de l'agent Gemini.
+A Slack message with the agent's verdict should follow shortly after.

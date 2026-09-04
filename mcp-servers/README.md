@@ -1,41 +1,44 @@
-# Serveurs MCP : VirusTotal & AbuseIPDB
+# MCP servers: VirusTotal and AbuseIPDB
 
-Deux serveurs [MCP](https://modelcontextprotocol.io/) minimalistes, écrits maison (voir
-`docs/decisions.md` à la racine pour le choix de ne pas utiliser un paquet npm tiers), que l'agent
-Gemini appelle lui-même comme outils pendant le triage, sans node HTTP n8n câblé en dur.
+Two small [MCP](https://modelcontextprotocol.io/) servers written against the official SDK, which
+the triage agent calls as tools during analysis. No hardcoded HTTP node in the workflow: the agent
+decides when to use them.
 
-- `virustotal-server.js` (port 3001) : `lookup_ip`, `lookup_domain`, `lookup_file_hash`
-- `abuseipdb-server.js` (port 3002) : `check_ip`
+- `virustotal-server.js` (port 3001): `lookup_ip`, `lookup_domain`, `lookup_file_hash`
+- `abuseipdb-server.js` (port 3002): `check_ip`
 
-**Transport : Streamable HTTP, stateless**, chacun exposé sur `http://localhost:<port>/mcp`. Pas
-du stdio : le node natif "MCP Client Tool" de n8n ne sait parler qu'à des serveurs MCP en réseau
-(SSE ou HTTP Streamable), pas spawn un sous-processus, donc ces serveurs tournent en continu
-plutôt que d'être lancés à la demande.
+**Transport: stateless Streamable HTTP**, each exposed at `http://localhost:<port>/mcp`. Not stdio,
+because n8n's built-in MCP Client Tool node only speaks network transports (SSE or Streamable HTTP)
+and cannot spawn a subprocess. So these run as long-lived local services rather than per-call
+children.
 
-## Installation et démarrage
+Both trim the vendor response down to the fields that matter for a triage decision. VirusTotal in
+particular returns very large payloads with per-engine breakdowns, which would bloat the agent's
+context for no benefit.
+
+## Install and run
 
 ```bash
 npm install
 
-# Charge VT_API_KEY / ABUSEIPDB_API_KEY depuis ../.env, puis démarre les deux serveurs
-# (chacun dans son propre terminal, ou en arrière-plan)
+# Load VT_API_KEY / ABUSEIPDB_API_KEY from ../.env, then start both servers
 node virustotal-server.js   # http://localhost:3001/mcp
 node abuseipdb-server.js    # http://localhost:3002/mcp
 ```
 
-## Clés API (gratuites)
+## API keys
 
-- VirusTotal : https://www.virustotal.com/gui/my-apikey (palier gratuit, ~4 req/min)
-- AbuseIPDB : https://www.abuseipdb.com/account/api (palier gratuit, 1000 req/jour)
+- VirusTotal: https://www.virustotal.com/gui/my-apikey (free tier, about 4 requests per minute)
+- AbuseIPDB: https://www.abuseipdb.com/account/api (free tier, 1000 requests per day)
 
-Chaque serveur lit sa clé depuis une variable d'environnement (`VT_API_KEY`,
-`ABUSEIPDB_API_KEY`, voir `../.env`), jamais en dur dans le code.
+Each server reads its key from an environment variable (`VT_API_KEY`, `ABUSEIPDB_API_KEY`, see
+`../.env`), never from the code.
 
-Dans n8n, chaque node "MCP Client Tool" pointe simplement vers l'URL `http://localhost:<port>/mcp`
-(authentification : `None`, ces serveurs ne sont exposés qu'en local), aucune clé à saisir côté
-n8n : elles restent uniquement dans l'environnement des serveurs MCP eux-mêmes.
+In n8n, each MCP Client Tool node just points at `http://localhost:<port>/mcp` with authentication
+set to none, since the servers are bound locally. No key is entered on the n8n side: they stay in
+the environment of the MCP servers themselves.
 
-## Test manuel (sans n8n)
+## Manual test, without n8n
 
 ```bash
 curl -s -X POST http://localhost:3001/mcp \
@@ -43,4 +46,4 @@ curl -s -X POST http://localhost:3001/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lookup_ip","arguments":{"ip":"8.8.8.8"}}}'
 ```
 
-Réponse attendue : un résultat JSON avec `malicious_votes`, `community_reputation`, etc.
+Expected: a JSON result with `malicious_votes`, `community_reputation`, and similar fields.

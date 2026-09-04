@@ -1,196 +1,93 @@
-# Décisions de design
+# Architecture decisions
 
-Journal des choix qui engagent le projet. Format court : contexte, décision, raison.
+Short records of the choices that shape this project: the context, the decision, and what was
+rejected. Kept brief on purpose.
 
-## 2026-09-03 : Hébergement du manager Wazuh, local (Docker Desktop / WSL2)
+## Wazuh manager runs locally in Docker
 
-**Contexte** : Wazuh manager est Linux-only. Sous Windows, deux options : Docker Desktop (WSL2,
-nécessite la virtualisation matérielle) ou une VM cloud gratuite (ex. Oracle Cloud Always Free).
+**Context.** The Wazuh manager is Linux-only. On a Windows workstation that leaves two options:
+Docker Desktop on the WSL2 backend, which needs hardware virtualisation, or a free cloud VM such as
+Oracle Cloud Always Free.
 
-**Vérification** : Gestionnaire des tâches, Performances, CPU, Virtualisation = **Activée**.
-Docker Desktop et WSL2 (distributions `Ubuntu` et `docker-desktop`) étaient déjà installés sur la
-machine, non lancés.
+**Decision.** Run the manager in Docker locally, with `docker compose`. Hardware virtualisation is
+available on the machine, so the cloud VM buys nothing here.
 
-**Décision** : manager Wazuh en conteneurs Docker, en local, via `docker compose`. Pas besoin de
-VM cloud, la démo en entretien se fera en local (screen-recording ou machine présente).
+**Rejected.** A cloud VM would give a remotely reachable demo URL, but it adds network exposure of a
+Wazuh manager and an n8n webhook for very little gain in a local demo setting.
 
-**Alternative rejetée** : VM cloud (Oracle Cloud Always Free). Aurait donné une URL démontrable à
-distance, mais ajoute de la complexité réseau (exposition publique d'un manager Wazuh et webhook
-n8n) pour un gain marginal vu que la virtualisation locale est disponible sans effort. Peut être
-reconsidéré en Phase 5 si une démo à distance s'avère utile.
+## MCP servers written by hand rather than pulled from npm
 
-## 2026-09-03 : Serveurs MCP VirusTotal/AbuseIPDB, écrits maison, pas des paquets npm tiers
+**Context.** Community MCP servers for VirusTotal and AbuseIPDB exist on npm and can be run with
+`npx` without writing any code.
 
-**Contexte** : des serveurs MCP communautaires existent déjà sur npm pour VirusTotal et AbuseIPDB
-(ex. `@burtthecoder/mcp-virustotal`, `@pipeworx/mcp-abuseipdb`), installables via `npx` sans écrire
-de code.
+**Decision.** Write two minimal servers against the official MCP SDK. Two reasons. First, security:
+these are low-download packages from unknown authors, and running them means handing them live API
+keys, which sits badly in a security project. Second, they stay small (130 and 200 lines) and trim
+vendor responses down to the fields that actually support a triage decision, which keeps the agent's
+context small.
 
-**Décision** : écrire des serveurs MCP minimalistes maison (SDK officiel MCP), plutôt que
-d'exécuter du code tiers non audité qui manipulerait des clés API VirusTotal/AbuseIPDB. Deux
-raisons : (1) sécurité, ce sont des paquets peu téléchargés, d'auteurs inconnus, exécuter du code
-arbitraire avec des clés API en entrée va à l'encontre de l'esprit d'un projet de sécurité ; (2)
-valeur CV, "j'ai construit un serveur MCP" démontre une compréhension du protocole, "j'ai lancé le
-paquet npm de quelqu'un d'autre" n'en démontre aucune.
+## MCP transport: Streamable HTTP, not stdio
 
-## 2026-09-03 : Transport MCP, Streamable HTTP plutôt que stdio
+**Context.** The initial plan ran the MCP servers over stdio, spawned as child processes by n8n.
+Reading the source of n8n's built-in MCP Client Tool node shows it only supports network transports,
+SSE or Streamable HTTP, with no local command spawning.
 
-**Contexte** : le plan initial faisait tourner les serveurs MCP en stdio, spawnés comme
-sous-processus par n8n. En inspectant le code source du node natif "MCP Client Tool" de n8n
-(`@n8n/n8n-nodes-langchain`, v2.22.6), il ne supporte que des transports réseau, SSE ou HTTP
-Streamable (`serverTransport`: `sse` | `httpStreamable`), pas de spawn de commande locale.
+**Decision.** Both servers run stateless Streamable HTTP on `localhost:3001` and `localhost:3002`,
+following the official SDK example. n8n connects with authentication set to none, since they are
+bound locally only.
 
-**Décision** : les deux serveurs MCP tournent en Streamable HTTP (mode stateless, un
-`McpServer`+`transport` neuf par requête HTTP, pattern de l'exemple officiel du SDK
-`simpleStatelessStreamableHttp.ts`), exposés sur `http://localhost:3001/mcp` (VirusTotal) et
-`http://localhost:3002/mcp` (AbuseIPDB). n8n s'y connecte avec authentification `None` (local
-uniquement). Validé avec de vrais appels (VirusTotal sur 8.8.8.8, AbuseIPDB sur une IP réelle).
+**Rejected.** The `n8n-nodes-mcp` community node does support stdio, but installing a community node
+means running third-party code again, the same trade-off already settled above.
 
-**Alternative rejetée** : le community node `n8n-nodes-mcp` supporte le stdio, mais c'est à
-nouveau du code tiers nécessitant l'installation d'un community node, même arbitrage sécurité que
-pour les serveurs MCP eux-mêmes (voir décision ci-dessus).
+## Tiered triage instead of calling the model on every alert
 
-## 2026-09-03 : Incident - flood d'alertes SCA, désactivation du module SCA
+**Context.** Calling an LLM once per alert is expensive, slow, and non-deterministic. It also burns
+a free-tier quota quickly: an early misconfiguration let Wazuh's compliance scanning module raise
+over 300 routine alerts in a few minutes, each one triggering a model call, exhausting the daily
+quota in a single burst.
 
-**Contexte** : une fois l'agent Windows connecté et Sysmon actif, environ 338 exécutions n8n se
-sont déclenchées en quelques minutes (335 en erreur). En creusant les logs d'alertes Wazuh, la
-quasi-totalité (306+) venait de la règle 19007, une alerte de niveau 7 générée par le module SCA
-(Security Configuration Assessment) pour **chaque contrôle de conformité échoué** lors d'un scan
-CIS Benchmark. Le scan tournait contre un container dont la distribution ne correspond même pas
-au benchmark testé (CIS Amazon Linux 2023 sur une image qui n'est pas Amazon Linux), garantissant
-un taux d'échec élevé et donc un flot d'alertes. Chaque alerte de niveau >= 7 déclenchait l'agent
-Gemini via l'intégration n8n, ce qui a très probablement épuisé le quota gratuit de la clé API
-(explique les erreurs `fetch failed`/503 rencontrées pendant les tests de la Phase 3).
+**Decision.** Alerts pass through a cascade, and only reach the model when the cheaper tiers cannot
+settle them:
 
-**Décision** : désactiver entièrement le module SCA (`<sca><enabled>no</enabled></sca>`) : le
-scan de conformité n'apporte rien à l'objectif du projet (détection et triage d'attaques) et son
-coût (bruit, épuisement du quota LLM) dépasse largement sa valeur ici. Le seuil de déclenchement
-de l'intégration n8n est aussi relevé de niveau 7 à niveau 10, en marge de sécurité contre
-d'autres sources de bruit ambiant (ex. une règle PowerShell générique de niveau 9 observée dans le
-même flot).
+- **Tier 0**, deduplication. A fingerprint of rule ID, host and extracted IOCs. A repeat within six
+  hours replays the cached verdict.
+- **Tier 1**, deterministic pre-filter. With no actionable IOC there is nothing to enrich and no
+  reasoning to add, so the alert is escalated for human review without a model call.
+- **Tier 2**, spend guard. A daily cap plus a minimum interval between calls, the latter because
+  bursts of alerts arriving at once (typically when an agent flushes its buffer after a restart)
+  otherwise hit per-minute rate limits.
+- **Tier 3**, the model, on ambiguous alerts with indicators worth enriching.
 
-**Leçon** : dans un pipeline qui déclenche un appel LLM par alerte, le filtre de déclenchement
-doit être pensé dès le départ pour exclure le bruit de fond (conformité, scans périodiques), pas
-seulement le niveau de sévérité brut d'une règle Wazuh isolée.
+When tier 2 trips, the alert is still escalated with an explicit note rather than dropped or closed
+by default. A pipeline that loses alerts once its budget runs out is broken, not optimised.
 
-**Suite** : en creusant, le module de détection de vulnérabilités (CVE) présentait le même risque
-(CVE Critical = niveau 13, High = niveau 10, les deux au-dessus du seuil de déclenchement, avec
-600+ CVE détectées sur les paquets installés) et a été désactivé par la même logique. Le SCA
-tournait aussi côté agent Windows (scan CIS séparé de celui du manager), désactivé via la
-configuration partagée (`config/agent.conf`). Après ces trois désactivations, plus aucun flot
-constaté sur une nouvelle série de tests.
+**Rejected.** Enriching through VirusTotal and AbuseIPDB *before* the model, and deciding on score
+thresholds alone. It would duplicate logic already carried by the MCP servers, and it would take
+away the agent's decision of whether to enrich, which is the point of the agentic design.
 
-## 2026-09-03 : Règles de détection custom pour les scénarios d'attaque
+## Noisy Wazuh modules disabled
 
-**Contexte** : hypothèse de départ du projet ("le ruleset par défaut de Wazuh couvre déjà la
-plupart des techniques Atomic Red Team via Sysmon") vérifiée fausse en pratique pour certains cas.
-Le ruleset par défaut contient bien des règles Sysmon (`0800-sysmon_id_1.xml`,
-`0860-sysmon_id_13.xml`, etc.), mais leur déclenchement s'est avéré peu fiable lors des tests :
-la règle intégrée pour PowerShell encodé (92057) n'a fini par se déclencher correctement qu'après
-un redémarrage complet du manager (`wazuh-control restart`, pas un simple `docker compose
-restart`).
+**Context.** Two built-in modules generate one alert per finding, well above the webhook threshold:
+compliance scanning (SCA), with 300+ failed CIS checks per scan, and vulnerability detection, which
+maps Critical CVEs to level 13 and High to level 10, on a host with hundreds of outdated packages.
 
-**Décision** : écrire des règles custom dans `wazuh/config/local_rules.xml` pour les 3 techniques
-simulées, en s'appuyant sur la structure exacte des événements Sysmon capturés sur cette machine
-(vérifiée via `wazuh-logtest` et l'archivage complet temporaire, voir méthode dans le code). Deux
-des trois règles (T1059.001 encodage PowerShell, T1053.005 tâche planifiée) sont confirmées
-fonctionnelles avec de vraies alertes de niveau 12 et tags MITRE ATT&CK corrects. La troisième
-(T1547.001, clé de registre Run) reste un problème ouvert : la structure de l'événement capturé
-correspond exactement à ce que la règle attend (vérifié champ par champ), mais ni la règle custom
-ni la règle intégrée équivalente (92300/92301) ne se déclenchent pour ce cas précis, pour une
-raison non identifiée à ce stade. À reprendre en Phase 5 si le temps le permet, sinon documenté
-comme limitation connue plutôt que laissé silencieux.
+**Decision.** Disable both, on the manager and on the agent. Neither serves this project's goal,
+which is attack detection and triage, and both are proven flood sources.
 
-## 2026-09-04 : Garde-fou anti-flood dans le workflow n8n, et bug persistant du schéma de sortie
+## Custom detection rules
 
-**Contexte** : suite à l'incident de flood SCA/CVE (voir plus haut, confirmé par le tableau de bord
-d'usage de la clé API Gemini : ~400 requêtes, dont des erreurs 429 TooManyRequests, en quelques
-minutes), la demande explicite était d'éviter que ce type de problème bloque le projet pour le
-reste d'une journée à l'avenir.
+**Context.** The default Wazuh ruleset did not reliably cover the tested techniques over Sysmon.
+Investigating registry Run key persistence showed the `sysmon_event_13` group is never assigned by
+this version, which silently disables the built-in rules depending on it (92300 and 92301).
 
-**Décision** : ajouter un coupe-circuit directement dans le workflow n8n (`Rate Limit Guard`, un
-node Code qui plafonne les appels à 20 par fenêtre glissante de 24h via les données statiques du
-workflow, indépendant de la config Wazuh) plutôt que de compter uniquement sur la discipline
-manuelle ou la config côté SIEM. Défense en profondeur : même si le filtre d'alertes Wazuh était
-mal reconfiguré à nouveau, ce garde-fou empêcherait un nouveau flood de vider le quota. Confirmé
-fonctionnel par test réel (`withinLimit: true`, comptage correct, routage conditionnel correct).
+**Decision.** Write rules bound to the `windows` group, verified to fire, built from the real
+structure of captured events. Two details worth recording for anyone writing similar rules:
 
-## 2026-09-04 : Schéma de sortie structuré, mauvais nom de paramètre
+- Wazuh stores Windows paths in `targetObject` with doubled backslashes, so a regex matching a
+  single backslash never fires. The official ruleset follows the same convention.
+- Unknown parameters in a node or rule definition raise no error, they are ignored and the default
+  applies. A wrong field name therefore looks like a broken tool rather than a broken config.
 
-**Symptôme** : le node "Triage Verdict Schema" retombait systématiquement sur son schéma d'exemple
-par défaut (`state`/`cities`) au lieu du schéma custom (`severity`/`verdict`/`action`/...), rendant
-les messages Slack inutilisables (champs `undefined`). Plusieurs heures perdues à soupçonner un
-bug de l'interface n8n qui réinitialiserait le champ, puis à tenter des contournements par
-manipulation directe de la base (patch des tables, republication CLI, réimport, synchronisation
-manuelle des tables de versioning). Ces tentatives ont elles-mêmes cassé d'autres choses au
-passage (route de webhook corrompue, erreur 500 sur le webhook), sans jamais résoudre le symptôme.
-
-**Cause réelle** : erreur de nom de paramètre dans le JSON du workflow. En lisant le code source du
-node (`OutputParserStructured.node.js`), la résolution est explicite :
-
-```js
-if (this.getNode().typeVersion <= 1.1) { inputSchema = getNodeParameter('jsonSchema', ...); }
-else                                   { inputSchema = getNodeParameter('inputSchema', ...); }
-```
-
-Le workflow déclare le node en `typeVersion: 1.3` et le paramètre était nommé `jsonSchema`, valide
-uniquement jusqu'à la version 1.1. Le node ignorait donc silencieusement le champ et appliquait sa
-valeur par défaut. Renommer le paramètre en `inputSchema` a résolu le problème immédiatement.
-
-## 2026-09-04 : Résolution de la détection T1547.001 (clé de registre Run)
-
-**Contexte** : cette règle était la seule des trois à ne pas se déclencher, malgré un événement
-Sysmon correctement capturé et une structure de champs conforme à ce que la règle attendait. Elle
-avait été documentée comme limitation connue faute de cause identifiée.
-
-**Méthode** : bissection en déployant deux règles de diagnostic temporaires au niveau 5,
-c'est-à-dire sous le seuil de déclenchement de l'intégration n8n, pour observer sans consommer de
-quota LLM. Une règle testant uniquement `if_group windows` + eventID 13, une autre testant
-`if_group sysmon_event_13`. Résultat : la première se déclenche, la seconde jamais. La
-classification de base fonctionne donc, l'échec venait de la dernière condition, le regex.
-
-**Cause** : Wazuh stocke les chemins Windows du champ `targetObject` avec les backslashes doublés.
-Le regex `\\CurrentVersion\\Run\\`, qui matche un backslash simple, ne correspond donc jamais. Il
-faut `\\\\CurrentVersion\\\\Run\\\\`. Le ruleset officiel applique la même convention, visible dans
-la règle intégrée 92300 qui avait été lue pendant l'investigation sans que la conséquence en soit
-tirée.
-
-**Effet de bord découvert** : le groupe `sysmon_event_13` n'est jamais assigné par cette version de
-Wazuh, ce qui neutralise silencieusement toutes les règles intégrées qui en dépendent, dont
-92300 et 92301 pour la persistance par clé de registre. Un déploiement Wazuh par défaut ne détecte
-donc pas cette technique, ce qui justifie a posteriori le choix d'écrire des règles custom
-rattachées au groupe `windows`, vérifié fonctionnel.
-
-**Résultat** : les trois techniques simulées sont détectées, chacune produisant exactement une
-alerte de niveau 12 correctement taguée MITRE ATT&CK.
-
-## 2026-09-04 : Tuning de faux positif et limitation du rythme d'appels
-
-**Faux positif identifié** : la règle intégrée 92213 (« Executable file dropped in folder commonly
-used by malware », niveau 15, donc au-dessus du seuil de déclenchement) se déclenche sur les
-fichiers `__PSScriptPolicyTest_*.ps1` que PowerShell crée lui-même dans `%TEMP%` pour vérifier la
-politique d'exécution. Conséquence concrète : lancer un script `.ps1`, y compris un script légitime,
-générait une alerte de niveau 15 qui déclenchait l'agent de triage. Autrement dit, les scénarios de
-test généraient plus de bruit que de signal. Règle de suppression ajoutée (`100010`, niveau 0 :
-évènement conservé dans les logs mais non alerté). Après tuning, une exécution du scénario
-T1053.005 génère exactement une alerte, la bonne.
-
-**Rythme d'appels** : le garde-fou initial plafonnait les appels sur 24h mais n'imposait aucun
-espacement. Une rafale d'alertes arrivant d'un coup (typiquement au redémarrage de la machine, quand
-l'agent Wazuh vide son tampon) déclenchait plusieurs appels en quelques secondes et provoquait des
-erreurs 429 de rate limit par minute. Un espacement minimum de 8 secondes entre deux appels a été
-ajouté à la même fonction de garde.
-
-**Limite connue** : le compteur du garde-fou s'appuie sur les données statiques du workflow n8n
-(`$getWorkflowStaticData`), qui sont réinitialisées lorsque le workflow est réimporté. Après un
-réimport, le plafond journalier repart donc de zéro. Acceptable ici (le réimport est une opération
-manuelle et rare), mais dans un contexte de production il faudrait un compteur externe au workflow.
-
-## Leçon transverse sur les paramètres de nodes n8n
-
-**Leçon** : vérifier le nom exact des paramètres dans le code source du node pour la `typeVersion`
-utilisée, au lieu de le deviner. Les paramètres inconnus ne provoquent aucune erreur dans n8n, ils
-sont ignorés en silence et la valeur par défaut s'applique, ce qui produit un symptôme trompeur
-qui ressemble à un bug de l'outil. Corollaire : avant de conclure à un bug d'un outil largement
-utilisé, remettre en cause sa propre configuration d'abord. Second corollaire : ne pas contourner
-le système de versioning interne de n8n par des écritures SQL directes, ça masque le problème réel
-et en crée de nouveaux.
+A suppression rule was also added for built-in rule 92213, which fires at level 15 on the
+`__PSScriptPolicyTest_*.ps1` files PowerShell writes to `%TEMP%` on every script launch. Without it,
+running any legitimate script wakes the triage agent.

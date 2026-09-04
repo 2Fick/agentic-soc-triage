@@ -19,90 +19,23 @@
       }
     },
     {
-      "id": "21c4da82-651d-494a-b38c-e092b4de437e",
-      "name": "Rate Limit Guard",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        200,
-        300
-      ],
-      "notes": "Double garde-fou sur les appels au LLM : plafond de 20 appels par 24h (protege le quota total) et espacement minimum de 8s entre deux appels (protege du rate limit par minute lors d une rafale d alertes). Independant de la configuration Wazuh. Voir docs/decisions.md pour les incidents qui ont motive ces deux protections.",
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst now = Date.now();\n\n// Deux protections complementaires, issues d'incidents reels (voir docs/decisions.md) :\n// - plafond journalier : protege le quota total de la cle API\n// - espacement minimum : protege du rate limit par minute, qui se declenche quand une rafale\n//   d'alertes arrive d'un coup (redemarrage de machine, pic de bruit du SIEM)\nconst windowMs = 24 * 60 * 60 * 1000;\nconst maxPerWindow = 20;\nconst minIntervalMs = 8000;\n\nif (!staticData.alertTimestamps) staticData.alertTimestamps = [];\nstaticData.alertTimestamps = staticData.alertTimestamps.filter((t) => now - t < windowMs);\n\nconst lastCall = staticData.alertTimestamps.length\n  ? staticData.alertTimestamps[staticData.alertTimestamps.length - 1]\n  : 0;\nconst sinceLastMs = now - lastCall;\n\nconst underDailyCap = staticData.alertTimestamps.length < maxPerWindow;\nconst spacedEnough = sinceLastMs >= minIntervalMs;\nconst withinLimit = underDailyCap && spacedEnough;\n\nif (withinLimit) staticData.alertTimestamps.push(now);\n\nconst reason = underDailyCap\n  ? (spacedEnough ? 'ok' : 'appels trop rapproches (rate limit par minute)')\n  : 'plafond journalier atteint';\n\nconst item = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    _rateLimit: {\n      withinLimit,\n      reason,\n      countInWindow: staticData.alertTimestamps.length,\n      maxPerWindow,\n      sinceLastMs,\n      minIntervalMs,\n    },\n  },\n}];\n"
-      }
-    },
-    {
-      "id": "f7415b40-2e76-4ca8-be88-ca23b562bc92",
-      "name": "IF Rate Limit OK",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        400,
-        300
-      ],
-      "parameters": {
-        "conditions": {
-          "combinator": "and",
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json._rateLimit.withinLimit }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ]
-        },
-        "options": {}
-      }
-    },
-    {
-      "id": "8a7a3932-d685-45a0-a3fc-c075927f81b6",
-      "name": "Rate Limit Notice",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        400,
-        480
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
-        "sendBody": true,
-        "contentType": "json",
-        "specifyBody": "json",
-        "jsonBody": "={{ { \"text\": \"Rate limit atteint (\" + $json._rateLimit.maxPerWindow + \" alertes / 24h) : cette alerte n'a pas ete envoyee a l'agent, pour proteger le quota Gemini. Verifier Wazuh directement.\" } }}",
-        "options": {}
-      }
-    },
-    {
       "id": "5e5c9c4e-1827-47b3-aacc-6ce1e2a3363f",
       "name": "Triage Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        620,
-        300
+        820,
+        220
       ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "parameters": {
         "promptType": "define",
-        "text": "=Voici une alerte Wazuh a trier :\n\n{{ JSON.stringify($json.body.alert, null, 2) }}",
+        "text": "=Wazuh alert to triage:\n\n{{ JSON.stringify($json.alert, null, 2) }}",
         "hasOutputParser": true,
         "options": {
-          "systemMessage": "Tu es un analyste SOC Tier-1 qui trie des alertes Wazuh. Pour chaque alerte recue :\n\n1. Analyse l'alerte (regle declenchee, niveau de severite Wazuh, log complet, hote concerne).\n2. Si l'alerte contient une IP, un domaine ou un hash de fichier exploitable, utilise les outils disponibles (VirusTotal, AbuseIPDB) pour l'enrichir. N'appelle un outil que si une donnee pertinente a verifier est presente - n'invente jamais d'IOC a verifier.\n3. Determine :\n   - severity: \"low\" | \"medium\" | \"high\" | \"critical\"\n   - verdict: \"benign\" | \"suspicious\" | \"malicious\" | \"needs_human_review\"\n   - action: \"auto_close\" | \"escalate\"\n   - summary: resume en 2-3 phrases, comprehensible par un humain, de ce qui s'est passe et pourquoi\n   - reasoning: ton raisonnement (regle + resultats des outils + decision)\n\nRegle de decision pour \"action\" :\n- \"auto_close\" UNIQUEMENT si tu es confiant que c'est un faux positif ou une activite benigne connue (ex. IOC propre sur VirusTotal ET AbuseIPDB, comportement explicable).\n- \"escalate\" dans tous les autres cas, y compris le doute. En cas d'incertitude, d'absence de donnees d'enrichissement, d'erreur d'outil, ou de signal contradictoire : escalade toujours. Ne jamais auto-clore par defaut faute de certitude.\n\nReste factuel. N'invente jamais de donnees que les outils n'ont pas renvoyees."
+          "systemMessage": "You are a Tier-1 SOC analyst triaging Wazuh alerts. For each alert:\n\n1. Read the alert: which rule fired, its Wazuh severity level, the full log, and the host involved.\n2. If the alert contains a usable IP address, domain or file hash, enrich it with the available tools (VirusTotal, AbuseIPDB). Only call a tool when there is something real to look up. Never invent an indicator to check.\n3. Decide:\n   - severity: \"low\" | \"medium\" | \"high\" | \"critical\"\n   - verdict: \"benign\" | \"suspicious\" | \"malicious\" | \"needs_human_review\"\n   - action: \"auto_close\" | \"escalate\"\n   - summary: two or three sentences a human can read, saying what happened and why it matters\n   - reasoning: how you got there (the rule, the tool results, the decision)\n\nRule for \"action\":\n- Use \"auto_close\" only when you are confident this is a false positive or known benign activity, for example a clean indicator on both VirusTotal and AbuseIPDB together with behaviour that makes sense.\n- Use \"escalate\" in every other case, including doubt. Uncertainty, missing enrichment data, a tool error, or conflicting signals all mean escalate. Never auto-close simply because you lack certainty.\n\nStay factual. Never state data the tools did not return."
         }
       }
     },
@@ -112,8 +45,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        560,
-        520
+        760,
+        460
       ],
       "parameters": {
         "modelName": "models/gemini-3.6-flash"
@@ -121,7 +54,7 @@
       "credentials": {
         "googlePalmApi": {
           "id": "",
-          "name": "Gemini SOC Triage (a lier manuellement)"
+          "name": "Google Gemini(PaLM) Api account"
         }
       }
     },
@@ -131,8 +64,8 @@
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
       "position": [
-        400,
-        560
+        600,
+        500
       ],
       "parameters": {
         "endpointUrl": "http://localhost:3001/mcp",
@@ -146,8 +79,8 @@
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
       "position": [
-        720,
-        560
+        920,
+        500
       ],
       "parameters": {
         "endpointUrl": "http://localhost:3002/mcp",
@@ -161,8 +94,8 @@
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.3,
       "position": [
-        880,
-        520
+        1080,
+        460
       ],
       "parameters": {
         "schemaType": "manual",
@@ -175,8 +108,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1020,
-        300
+        1500,
+        320
       ],
       "parameters": {
         "method": "POST",
@@ -184,8 +117,72 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { \"text\": ($json.output.action === 'auto_close' ? '🟢 AUTO-CLOSED' : '🔴 ESCALATED') + ' - Severity: ' + $json.output.severity + '\\n*Verdict:* ' + $json.output.verdict + '\\n*Summary:* ' + $json.output.summary + '\\n*Reasoning:* ' + $json.output.reasoning } }}",
+        "jsonBody": "={{ {\n  \"text\":\n    ($json.output.action === 'auto_close' ? ':large_green_circle: AUTO-CLOSED' : ':red_circle: ESCALATED')\n    + '  |  severity: ' + $json.output.severity\n    + '  |  verdict: ' + $json.output.verdict\n    + '\n_Triage path: '\n    + ($json._triage.path === 'llm' ? 'model analysis'\n       : $json._triage.path === 'cache' ? 'cache, no model call'\n       : $json._triage.path === 'deterministic' ? 'deterministic rules, no model call'\n       : 'spend guard, no model call')\n    + ' (' + $json._triage.detail + '). Model calls today: '\n    + $json._triage.llmCallsToday + '/' + $json._triage.maxLlmPerDay + '._'\n    + '\n\n*Summary:* ' + $json.output.summary\n    + '\n\n*Reasoning:* ' + $json.output.reasoning\n} }}",
         "options": {}
+      }
+    },
+    {
+      "id": "d6a21687-d457-4a32-b3de-ae24264acdde",
+      "name": "Triage Cascade",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        320
+      ],
+      "notes": "Tiered triage: deduplication by fingerprint, then a deterministic pre-filter, then the spend guard. The model is only reached by alerts that none of the cheaper tiers could settle. See docs/decisions.md.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Tiered triage: each tier tries to settle the alert without calling the model.\n// The model is a last resort, reached only by alerts that are genuinely ambiguous.\n// See docs/decisions.md.\n\nconst sd = $getWorkflowStaticData('global');\nconst now = Date.now();\n\nconst DEDUP_WINDOW_MS = 6 * 60 * 60 * 1000;\nconst DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;\nconst MAX_LLM_PER_DAY = 20;\nconst MIN_INTERVAL_MS = 8000;\n\nconst alert = ($input.first().json.body && $input.first().json.body.alert) || {};\nconst raw = JSON.stringify(alert);\n\n// ---------- indicator extraction ----------\nconst isPrivateIp = (ip) => {\n  const p = ip.split('.').map(Number);\n  if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;\n  return (\n    p[0] === 0 || p[0] === 10 || p[0] === 127 ||\n    (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||\n    (p[0] === 192 && p[1] === 168) ||\n    (p[0] === 169 && p[1] === 254) ||\n    p[0] >= 224\n  );\n};\n\nconst allIps = [...new Set(raw.match(/\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b/g) || [])];\nconst publicIps = allIps.filter((ip) => !isPrivateIp(ip));\nconst hashes = [...new Set([\n  ...(raw.match(/\\b[a-fA-F0-9]{64}\\b/g) || []),\n  ...(raw.match(/\\b[a-fA-F0-9]{32}\\b/g) || []),\n])];\nconst hasActionableIoc = publicIps.length > 0 || hashes.length > 0;\n\n// ---------- alert fingerprint ----------\nconst ruleId = (alert.rule && alert.rule.id) || 'unknown';\nconst ruleLevel = Number((alert.rule && alert.rule.level) || 0);\nconst ruleDesc = (alert.rule && alert.rule.description) || '';\nconst agentName = (alert.agent && alert.agent.name) || 'unknown';\nconst fingerprint = [ruleId, agentName, publicIps.slice().sort().join(','), hashes.slice().sort().join(',')].join('|');\n\n// ---------- tier 0: deduplication ----------\nif (!sd.verdictCache) sd.verdictCache = {};\nfor (const k of Object.keys(sd.verdictCache)) {\n  if (now - sd.verdictCache[k].at > DEDUP_WINDOW_MS) delete sd.verdictCache[k];\n}\n\nconst decide = (path, output, detail) => [{\n  json: {\n    needsLlm: path === 'llm',\n    output,\n    _triage: {\n      path,\n      detail,\n      fingerprint,\n      ruleId,\n      ruleLevel,\n      agentName,\n      publicIps,\n      hashes,\n      llmCallsToday: (sd.llmCallTimestamps || []).length,\n      maxLlmPerDay: MAX_LLM_PER_DAY,\n    },\n    alert,\n  },\n}];\n\nconst cached = sd.verdictCache[fingerprint];\nif (cached) {\n  const ageMin = Math.round((now - cached.at) / 60000);\n  return decide('cache', cached.output, `cached verdict replayed (seen ${ageMin} min ago)`);\n}\n\n// ---------- tier 1: deterministic pre-filter ----------\n// With no actionable indicator there is nothing to enrich, and the model would add no information\n// the Wazuh rule does not already carry. Escalate for human review instead of spending a call.\nif (!hasActionableIoc) {\n  const output = {\n    severity: ruleLevel >= 12 ? 'high' : 'medium',\n    verdict: 'needs_human_review',\n    action: 'escalate',\n    summary: `Wazuh rule ${ruleId} (level ${ruleLevel}) on ${agentName}: ${ruleDesc}. No external indicator (public IP or file hash) is present in the alert.`,\n    reasoning: 'Settled deterministically, without calling the model: with no actionable indicator there is nothing for threat intelligence to enrich, and no reasoning the model could add on top of the rule itself. Escalated for human review, following the escalate-when-in-doubt rule.',\n  };\n  return decide('deterministic', output, 'no actionable indicator, settled without a model call');\n}\n\n// ---------- tier 2: spend guard ----------\nif (!sd.llmCallTimestamps) sd.llmCallTimestamps = [];\nsd.llmCallTimestamps = sd.llmCallTimestamps.filter((t) => now - t < DAILY_WINDOW_MS);\n\nconst last = sd.llmCallTimestamps.length ? sd.llmCallTimestamps[sd.llmCallTimestamps.length - 1] : 0;\nconst sinceLastMs = now - last;\nconst underDailyCap = sd.llmCallTimestamps.length < MAX_LLM_PER_DAY;\nconst spacedEnough = sinceLastMs >= MIN_INTERVAL_MS;\n\nif (!underDailyCap || !spacedEnough) {\n  const cause = !underDailyCap\n    ? `daily cap of ${MAX_LLM_PER_DAY} calls reached`\n    : `calls too close together (${sinceLastMs} ms since the last one, minimum ${MIN_INTERVAL_MS} ms)`;\n  const output = {\n    severity: ruleLevel >= 12 ? 'high' : 'medium',\n    verdict: 'needs_human_review',\n    action: 'escalate',\n    summary: `Wazuh rule ${ruleId} (level ${ruleLevel}) on ${agentName}: ${ruleDesc}. Automated triage could not run.`,\n    reasoning: `Spend guard tripped: ${cause}. The alert is escalated without model analysis rather than being dropped or closed by default.`,\n  };\n  return decide('rate_limited', output, cause);\n}\n\n// ---------- tier 3: hand over to the model ----------\nsd.llmCallTimestamps.push(now);\nreturn decide('llm', null, `${publicIps.length} public IP(s), ${hashes.length} hash(es) to enrich`);\n"
+      }
+    },
+    {
+      "id": "f7415b40-2e76-4ca8-be88-ca23b562bc92",
+      "name": "IF Needs LLM",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        520,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsLlm }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a27cde2e-decb-4e88-aac6-1dbcb74d6551",
+      "name": "Record Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        220
+      ],
+      "notes": "Caches the model verdict so a replay of the same alert is answered without another call.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Cache the verdict the model just produced, so the same alert replayed within the dedup window\n// is answered without a second call. This is what makes the cascade pay off over time.\n\nconst sd = $getWorkflowStaticData('global');\nconst output = $input.first().json.output;\nconst triage = $('Triage Cascade').first().json._triage;\n\nif (!sd.verdictCache) sd.verdictCache = {};\nsd.verdictCache[triage.fingerprint] = { at: Date.now(), output };\n\nreturn [{ json: { output, _triage: triage } }];\n"
       }
     }
   ],
@@ -194,25 +191,25 @@
       "main": [
         [
           {
-            "node": "Rate Limit Guard",
+            "node": "Triage Cascade",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Rate Limit Guard": {
+    "Triage Cascade": {
       "main": [
         [
           {
-            "node": "IF Rate Limit OK",
+            "node": "IF Needs LLM",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF Rate Limit OK": {
+    "IF Needs LLM": {
       "main": [
         [
           {
@@ -223,7 +220,7 @@
         ],
         [
           {
-            "node": "Rate Limit Notice",
+            "node": "Post to Slack",
             "type": "main",
             "index": 0
           }
@@ -231,6 +228,17 @@
       ]
     },
     "Triage Agent": {
+      "main": [
+        [
+          {
+            "node": "Record Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Verdict": {
       "main": [
         [
           {

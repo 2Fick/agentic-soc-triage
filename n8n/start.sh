@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Starts n8n with its data folder (SQLite DB, credentials, binary data, logs) on D: instead of
-# the default ~/.n8n, see docs/disk-usage-tracking.md for why. Always use this script (or set
-# N8N_USER_FOLDER directly) rather than a bare `npx n8n start`, or n8n will silently recreate its
-# data folder on C:.
+# Starts n8n with its data folder (SQLite DB, credentials, binary data, logs) kept inside this
+# repo rather than in the default ~/.n8n. Always use this script, or set N8N_USER_FOLDER yourself,
+# rather than a bare `npx n8n start`: otherwise n8n silently recreates its data folder in the home
+# directory and the instance comes up empty.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

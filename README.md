@@ -1,127 +1,129 @@
 # Agentic SOC Triage
 
-Pipeline de détection et de triage automatisé d'alertes SIEM. Une attaque simulée sur un poste
-Windows déclenche une alerte Wazuh, qui est enrichie et triée par un agent IA capable d'appeler
-lui-même des outils de threat intelligence, puis transmise dans Slack avec un verdict argumenté.
+A detection and automated triage pipeline for SIEM alerts. A simulated attack on a Windows host
+raises a Wazuh alert, which is then enriched and adjudicated by an AI agent that calls threat
+intelligence tools on its own, and posted to Slack with a reasoned verdict.
 
-Projet personnel, construit intégralement avec des outils gratuits et self-hostés, pour démontrer
-une maîtrise pratique de la chaîne SOC moderne : SIEM, SOAR, LLM appliqué en agent, MCP.
+Built entirely on free, self-hosted tools, to show hands-on command of a modern SOC chain: SIEM,
+SOAR, applied LLM agents, and MCP.
 
-## Ce que ça produit
+## What it produces
 
-Verdict réel généré par le pipeline sur une alerte de brute force SSH (rejeu complet, aucune
-donnée inventée) :
+A real verdict from the pipeline, on an SSH brute force alert:
 
 ```json
 {
   "severity": "medium",
   "verdict": "suspicious",
   "action": "escalate",
-  "summary": "Une tentative d'authentification SSH infructueuse sur le compte \"admin\" a été détectée depuis l'adresse IP 8.8.8.8. Bien que l'IP appartienne aux serveurs DNS publics de Google et dispose d'une excellente réputation, l'initiation de connexions SSH depuis cette adresse constitue un comportement suspect nécessitant une analyse approfondie.",
-  "reasoning": "L'alerte déclenchée est la règle Wazuh 5710 (niveau 10) pour une tentative d'attaque SSH par force brute visant l'utilisateur invalide \"admin\". L'enrichissement montre qu'il s'agit du résolveur DNS public de Google LLC : score d'abus de 0% sur AbuseIPDB, 0 détection sur VirusTotal. Cependant, l'émission de tentatives de connexion SSH depuis un serveur DNS public est une anomalie inexpliquée (possible usurpation d'adresse, relais mal configuré, ou test d'intrusion). En l'absence de certitude, l'alerte ne peut être auto-fermée et doit être escaladée."
+  "summary": "A failed SSH authentication attempt against the \"admin\" account was detected from 8.8.8.8. The IP belongs to Google's public DNS servers and has a clean reputation, but SSH connection attempts coming from that address are unusual and need a closer look.",
+  "reasoning": "Wazuh rule 5710 (level 10) fired for an SSH brute force attempt against the invalid user \"admin\", from source IP 8.8.8.8. Enrichment shows this is Google LLC's public DNS resolver: 0% abuse score on AbuseIPDB, 0 detections on VirusTotal. However, a public DNS server initiating SSH connection attempts is an unexplained behaviour (possible address spoofing, a misconfigured relay, or a penetration test). Without certainty, the alert cannot be auto-closed and must be escalated."
 }
 ```
 
-L'intérêt de cet exemple : l'agent ne s'arrête pas au résultat brut des outils. Les deux sources
-de threat intelligence donnent l'IP pour propre, et il aurait été trivial de conclure « bénin,
-clôture automatique ». Il identifie l'incohérence comportementale (un résolveur DNS public n'ouvre
-pas de sessions SSH) et escalade. C'est le comportement recherché : en cas de doute, un analyste
-humain tranche.
+What makes this example interesting: the agent does not stop at the raw tool output. Both threat
+intelligence sources report the IP as clean, and concluding "benign, auto-close" would have been
+the easy answer. Instead it catches the behavioural mismatch, a public DNS resolver does not open
+SSH sessions, and escalates. That is the behaviour worth having: when in doubt, a human decides.
 
 ## Architecture
 
 ```
-Poste Windows (Sysmon + agent Wazuh)
+Windows host (Sysmon + Wazuh agent)
         |
-        |  télémétrie (création de process, registre, réseau)
+        |  telemetry (process creation, registry, network)
         v
-Wazuh manager (Docker)  -- règles de détection, dont custom pour les techniques MITRE testées
+Wazuh manager (Docker)  -- detection rules, including custom ones for the tested MITRE techniques
         |
-        |  webhook sortant, alertes de niveau >= 10 uniquement
+        |  outbound webhook, level >= 10 alerts only
         v
-n8n (self-hosté)
+n8n (self-hosted)
         |
-        +-- Rate Limit Guard ....... coupe-circuit, 20 appels LLM / 24h maximum
+        +-- Triage Cascade ......... dedup, deterministic pre-filter, spend guard
         |
-        +-- Agent IA (Gemini) ...... décide seul quels outils appeler
+        +-- AI agent (Gemini) ...... decides on its own which tools to call
         |       |
-        |       +-- MCP VirusTotal ....... lookup_ip / lookup_domain / lookup_file_hash
-        |       +-- MCP AbuseIPDB ........ check_ip
+        |       +-- VirusTotal MCP ....... lookup_ip / lookup_domain / lookup_file_hash
+        |       +-- AbuseIPDB MCP ........ check_ip
         |
-        +-- Sortie structurée ...... schéma JSON imposé (severity/verdict/action/summary/reasoning)
+        +-- Structured output ...... enforced JSON schema
         |
         v
-     Slack
+      Slack
 ```
 
-## Points techniques notables
+## Design notes
 
-**Tool-calling agentique, pas de workflow câblé en dur.** L'agent reçoit l'alerte brute et décide
-lui-même s'il doit enrichir, et avec quel outil. Une alerte sans IOC exploitable ne déclenche aucun
-appel externe. Les outils sont exposés via [MCP](https://modelcontextprotocol.io/), pas via des
-nodes HTTP figés.
+**Tiered triage, the model is a last resort.** Calling an LLM on every single alert is wasteful and
+slow. Each alert goes through a cascade, and only reaches the model if the cheaper layers cannot
+settle it:
 
-**Serveurs MCP écrits maison.** Des serveurs MCP communautaires existent sur npm pour VirusTotal et
-AbuseIPDB. Ils ont été écartés : exécuter du code tiers peu audité en lui confiant des clés API va
-à l'encontre de l'objectif d'un projet de sécurité. Les deux serveurs (SDK officiel MCP, transport
-Streamable HTTP) tiennent en 130 et 200 lignes et filtrent les réponses pour ne transmettre à
-l'agent que ce qui sert la décision de triage.
+| Tier | Decision | LLM call |
+|---|---|---|
+| 0 | Fingerprint already seen in the last 6h | No, cached verdict replayed |
+| 1 | No actionable IOC (no public IP, no hash) | No, deterministic verdict |
+| 2 | Daily cap reached, or calls too close together | No, fail-safe escalation |
+| 3 | Ambiguous case with IOCs worth enriching | Yes |
 
-**Biais volontaire vers l'escalade.** La règle de décision impose l'auto-clôture uniquement en cas
-de certitude. Doute, données d'enrichissement absentes, erreur d'outil ou signal contradictoire
-conduisent tous à l'escalade. Un agent qui clôturerait par défaut serait un risque, pas un gain.
+Tier 2 matters as much as the rest: when the guard trips, the alert is still escalated with an
+explicit note. A pipeline that silently drops alerts once its budget runs out would be a design
+flaw, not an optimisation.
 
-**Garde-fou anti-flood.** Un incident réel pendant le développement (voir `docs/decisions.md`) a vu
-le module de conformité de Wazuh générer plus de 300 alertes de routine en quelques minutes, chacune
-déclenchant un appel LLM, épuisant le quota de l'API en une seule salve. Correction à trois
-niveaux : désactivation des modules bruyants, remontée du seuil de déclenchement, et surtout un
-coupe-circuit dans le workflow lui-même qui plafonne les appels indépendamment de la configuration
-du SIEM.
+**Agentic tool calling, not a hardcoded workflow.** The agent receives the raw alert and decides by
+itself whether to enrich it, and with which tool. An alert with no usable indicator triggers no
+external call at all. Tools are exposed over [MCP](https://modelcontextprotocol.io/), not wired as
+fixed HTTP nodes.
 
-**Règles de détection custom, et une lacune du ruleset par défaut.** Les trois techniques sont
-couvertes par des règles écrites à la main (`wazuh/config/local_rules.xml`) à partir de la structure
-réelle des événements capturés. En investiguant pourquoi la détection de persistance par clé de
-registre ne se déclenchait pas, il est apparu que le groupe `sysmon_event_13` n'est jamais assigné
-par cette version de Wazuh, ce qui neutralise silencieusement les règles intégrées qui en dépendent
-(92300 et 92301). Autrement dit, un déploiement Wazuh par défaut ne détecte pas cette technique.
-Diagnostic mené par bissection avec des règles temporaires placées sous le seuil de déclenchement,
-pour ne pas consommer de quota LLM pendant le débogage.
+**Hand-written MCP servers.** Community MCP servers for VirusTotal and AbuseIPDB exist on npm. They
+were passed over: running lightly audited third-party code and handing it API keys runs against the
+point of a security project. The two servers are 130 and 200 lines against the official MCP SDK,
+and trim vendor responses down to what actually supports a triage decision.
 
-**Tuning de faux positif.** La règle intégrée 92213 se déclenche au niveau 15 sur les fichiers
-`__PSScriptPolicyTest_*.ps1` que PowerShell écrit lui-même dans `%TEMP%` à chaque lancement de
-script. Résultat : exécuter n'importe quel script légitime déclenchait l'agent de triage. Une règle
-de suppression ramène le signal à l'essentiel, une exécution de scénario produit désormais
-exactement une alerte, la bonne.
+**Deliberate bias toward escalation.** Auto-closing requires confidence. Doubt, missing enrichment,
+tool errors, or conflicting signals all lead to escalation. An agent that closed alerts by default
+would be a liability, not a gain.
+
+**Custom detection rules, and a gap in the default ruleset.** All three techniques are covered by
+hand-written rules (`wazuh/config/local_rules.xml`) built from the real structure of captured
+events. While investigating why registry persistence never fired, it turned out the
+`sysmon_event_13` group is never assigned by this version of Wazuh, which silently disables the
+built-in rules that depend on it (92300 and 92301). In other words, a default Wazuh deployment does
+not detect this technique at all.
+
+**False positive tuning.** Built-in rule 92213 fires at level 15 on the `__PSScriptPolicyTest_*.ps1`
+files PowerShell itself writes to `%TEMP%` on every script launch. Running any legitimate script was
+therefore enough to wake the triage agent. A suppression rule brings the signal back to what
+matters: one scenario run now produces exactly one alert, the right one.
 
 ## Stack
 
-| Composant | Choix | Pourquoi |
+| Component | Choice | Why |
 |---|---|---|
-| SIEM | Wazuh 4.14 (Docker, single-node) | Open source, gratuit sans limite de durée, SIEM+XDR reconnu |
-| Télémétrie endpoint | Sysmon + agent Wazuh | Visibilité process/registre/réseau sur Windows |
-| Automatisation | n8n self-hosté | Pas de dépendance SaaS, workflows versionnables |
-| Threat intelligence | VirusTotal, AbuseIPDB | Paliers gratuits, exposés en MCP |
-| LLM | Gemini (palier gratuit) | Coût nul, tool-calling natif |
-| Notification | Webhook Slack entrant | Gratuit |
+| SIEM | Wazuh 4.14 (Docker, single-node) | Open source, free with no time limit, established SIEM+XDR |
+| Endpoint telemetry | Sysmon + Wazuh agent | Process, registry and network visibility on Windows |
+| Automation | Self-hosted n8n | No SaaS dependency, workflows kept in version control |
+| Threat intelligence | VirusTotal, AbuseIPDB | Free tiers, exposed over MCP |
+| LLM | Gemini (free tier) | No cost, native tool calling |
+| Notification | Slack incoming webhook | Free |
 
-Contrainte tenue de bout en bout : **zéro coût, aucun essai limité dans le temps**.
+One constraint held throughout: **no cost anywhere, no time-limited trials**.
 
-## Reproduire
+## Running it
 
-Prérequis : Docker Desktop, Node.js, un poste Windows pour la télémétrie.
+Requirements: Docker Desktop, Node.js, and a Windows host for telemetry.
 
 ```bash
-# 1. Clés API (toutes gratuites), voir .env.example pour les liens
-cp .env.example .env   # puis remplir les 4 valeurs
+# 1. API keys, all free. See .env.example for where to get them
+cp .env.example .env   # then fill in the four values
 
 # 2. SIEM
 cd wazuh
 docker compose -f generate-indexer-certs.yml run --rm generator
 docker compose up -d
-./deploy-integration.sh   # intégration webhook vers n8n
-./deploy-config.sh        # règles custom + config partagée des agents
+./deploy-integration.sh   # webhook integration to n8n
+./deploy-config.sh        # custom rules + shared agent config
 
-# 3. Serveurs MCP
+# 3. MCP servers
 cd ../mcp-servers && npm install
 node virustotal-server.js &
 node abuseipdb-server.js &
@@ -130,43 +132,42 @@ node abuseipdb-server.js &
 cd ../n8n && ./start.sh
 ```
 
-Détail de chaque étape dans les README des sous-dossiers. L'installation de Sysmon et de l'agent
-Wazuh sur le poste Windows est décrite dans `wazuh/README.md`, les scénarios d'attaque dans
-`attacks/README.md`.
+Each step is detailed in the README of its own folder. Installing Sysmon and the Wazuh agent on the
+Windows host is covered in `wazuh/README.md`, the attack scenarios in `attacks/README.md`.
 
-## Tester la détection
+## Testing detection
 
-Trois scénarios MITRE ATT&CK, non destructifs et auto-nettoyants :
+Three MITRE ATT&CK scenarios, non-destructive and self-cleaning:
 
 ```powershell
 cd attacks
-.\T1059.001_powershell_encoded_command.ps1     # commande PowerShell encodée en base64
-.\T1053.005_scheduled_task_persistence.ps1     # persistance par tâche planifiée
-.\T1547.001_registry_run_key_persistence.ps1   # persistance par clé de registre Run
+.\T1059.001_powershell_encoded_command.ps1     # base64 encoded PowerShell command
+.\T1053.005_scheduled_task_persistence.ps1     # scheduled task persistence
+.\T1547.001_registry_run_key_persistence.ps1   # registry Run key persistence
 ```
 
-## Structure
+Each one produces exactly one level 12 alert, tagged with the matching MITRE technique.
+
+## Layout
 
 ```
-wazuh/         déploiement du SIEM, règles custom, intégration webhook
-n8n/           workflow de triage (JSON versionné) et script de démarrage
-mcp-servers/   serveurs MCP VirusTotal et AbuseIPDB
-attacks/       scénarios de simulation d'attaque
-sysmon/        configuration Sysmon
-docs/          journal des décisions de design et des incidents
+wazuh/         SIEM deployment, custom rules, webhook integration
+n8n/           triage workflow (versioned JSON) and start script
+mcp-servers/   VirusTotal and AbuseIPDB MCP servers
+attacks/       attack simulation scenarios
+sysmon/        Sysmon configuration
+docs/          architecture decision records
 ```
 
-## Limitations connues
+## Known limits
 
-Documentées plutôt que passées sous silence :
+Written down rather than glossed over:
 
-- **Palier gratuit Gemini** : quota quotidien limité. Le coupe-circuit protège contre son
-  épuisement accidentel, mais un usage réel en production nécessiterait un palier payant.
-- **Déploiement single-node**, mots de passe Wazuh par défaut : adapté à une démonstration locale,
-  pas à une exposition réseau. Voir la section Sécurité de `wazuh/README.md`.
+- **Gemini free tier**: limited daily quota. The cascade keeps usage low and the spend guard
+  prevents accidental exhaustion, but real production use would need a paid tier.
+- **Single-node deployment** with default Wazuh passwords: fine for a local demo, not for anything
+  reachable from a network. See the security section in `wazuh/README.md`.
 
-## Journal de décisions
+## Decisions
 
-`docs/decisions.md` retrace les choix d'architecture et les incidents rencontrés, y compris les
-erreurs de diagnostic et leur résolution. C'est volontairement conservé : la démarche compte autant
-que le résultat.
+`docs/decisions.md` records the architecture choices and the trade-offs behind them.

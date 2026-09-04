@@ -1,79 +1,105 @@
-# Wazuh manager (déploiement local, single-node)
+# Wazuh manager (local single-node deployment)
 
-Déploiement Docker single-node officiel (`wazuh/wazuh-docker` v4.14.7), avec deux ajouts pour ce
-projet :
-- `config/wazuh_cluster/wazuh_manager.conf` : bloc `<integration>` qui envoie chaque alerte de
-  niveau >= 7 au webhook n8n.
-- `integrations/custom-n8n(.py)` : script d'intégration custom qui POST l'alerte JSON vers n8n
-  (voir `docs/decisions.md` à la racine pour le contexte).
+Official single-node Docker deployment (`wazuh/wazuh-docker` 4.14.7), with three additions for this
+project:
 
-## Prérequis
+- `config/wazuh_cluster/wazuh_manager.conf`: an `<integration>` block that forwards every alert at
+  level 10 or above to the n8n webhook.
+- `config/local_rules.xml`: custom detection rules for the tested MITRE techniques, plus one
+  false positive suppression.
+- `integrations/custom-n8n(.py)`: the integration script that POSTs the alert JSON to n8n.
 
-- Docker Desktop (WSL2 backend) installé et démarré.
-- `vm.max_map_count >= 262144` sur le moteur Linux du WSL2 (requis par le indexer OpenSearch). Sur
-  les versions récentes de Docker Desktop c'est déjà configuré, sinon :
+## Requirements
+
+- Docker Desktop with the WSL2 backend, running.
+- `vm.max_map_count >= 262144` on the WSL2 Linux engine, required by the OpenSearch indexer. Recent
+  Docker Desktop versions set this already, otherwise:
   ```bash
   wsl -d docker-desktop sysctl -w vm.max_map_count=262144
   ```
 
-## Démarrage
+## Start
 
 ```bash
-# 1. Génère les certificats SSL internes (indexer / manager / dashboard)
+# 1. Generate the internal SSL certificates (indexer / manager / dashboard)
 docker compose -f generate-indexer-certs.yml run --rm generator
 
-# 2. Démarre l'environnement en arrière-plan
+# 2. Bring the stack up
 docker compose up -d
 
-# 3. Déploie le script d'intégration n8n dans le conteneur (voir "Pourquoi un script à part" ci-dessous)
+# 3. Deploy the n8n integration script into the container (see below for why)
 ./deploy-integration.sh
 
-# 4. Déploie les règles de détection custom et la config partagée pour les agents
+# 4. Deploy the custom rules and the shared agent config
 ./deploy-config.sh
 
-# 5. Suit les logs le temps du premier démarrage (~1 min)
+# 5. Follow the logs during first startup (about a minute)
 docker compose logs -f
 ```
 
-### Pourquoi `deploy-integration.sh` et pas un bind mount direct
+The dashboard is at https://localhost, with a self-signed certificate so the browser warning is
+expected. Default credentials are `admin` / `SecretPassword`, see the security note at the bottom.
 
-`integrations/custom-n8n(.py)` vit dans le repo, mais **n'est pas monté directement** dans le
-conteneur : les bind mounts Docker Desktop depuis un disque Windows rendent les fichiers
-world-writable, et `wazuh-integratord` refuse par sécurité d'exécuter un script world-writable
-(`ERROR: file 'integrations/custom-n8n' has write permissions`). `deploy-integration.sh` copie le
-script dans le volume nommé `wazuh_integrations` avec les bonnes permissions (`750`), puis
-redémarre le manager. À relancer à chaque modification de `custom-n8n.py`.
+### Why the deploy scripts instead of bind mounts
 
-Dashboard accessible sur https://localhost (certificat auto-signé, avertissement navigateur
-normal). Identifiants par défaut : `admin` / `SecretPassword` (à changer avant toute exposition
-au-delà de la démo locale, voir la section Sécurité ci-dessous).
+`integrations/custom-n8n(.py)` lives in the repo but is **not** mounted directly into the container.
+Docker Desktop bind mounts from a Windows drive make files world-writable, and `wazuh-integratord`
+refuses to run a world-writable script (`ERROR: file 'integrations/custom-n8n' has write
+permissions`). `deploy-integration.sh` copies the script into the named volume with correct
+permissions (`750`) and restarts the manager. Rerun it after any change to `custom-n8n.py`.
 
-## Vérifier que l'intégration n8n est bien câblée
+`deploy-config.sh` does the same for `local_rules.xml` and the shared `agent.conf`, which live
+inside the `wazuh_etc` named volume and are distributed to agents by the manager at runtime. Rerun
+it after any change to either file, then restart the agent service so it picks up the new shared
+config.
+
+## Checking the integration works
 
 ```bash
 docker compose exec wazuh.manager tail -f /var/ossec/logs/integrations.log
 ```
 
-Une ligne `OK sent alert id=... -> HTTP 200` doit apparaître à chaque alerte de niveau >= 7, une
-fois que le workflow n8n écoute sur `http://localhost:5678/webhook/wazuh-alert`.
+A line reading `OK sent alert id=... rule=... -> HTTP 200` should appear for every alert at level 10
+or above, once the n8n workflow is listening on `http://localhost:5678/webhook/wazuh-alert`.
 
-## Agent Wazuh + Sysmon
+## Wazuh agent and Sysmon
 
-Installé sur la machine Windows qui génère la télémétrie (voir `sysmon/` pour la config Sysmon et
-`attacks/` pour les scénarios de test). Contrairement à l'hypothèse de départ, le ruleset Wazuh par
-défaut ne couvre pas fiablement tous les cas Sysmon utiles ici : des règles custom ont été
-ajoutées dans `config/local_rules.xml` (voir `docs/decisions.md`).
+Both are installed on the Windows host that generates the telemetry.
 
-**Important** : le module SCA (scan de conformité CIS) et la détection de vulnérabilités (CVE)
-sont désactivés, à la fois côté manager (`ossec.conf`) et côté agent (`config/agent.conf`). Les
-deux génèrent une alerte par contrôle/CVE échoué (des centaines en quelques minutes) et ont
-provoqué un incident réel pendant le développement : voir `docs/decisions.md`. Ne pas les
-réactiver sans mettre en place un filtrage adapté sur l'intégration n8n, sous peine d'épuiser le
-quota gratuit de la clé API Gemini en quelques minutes.
+**Sysmon**, using the well-known [SwiftOnSecurity
+configuration](https://github.com/SwiftOnSecurity/sysmon-config) vendored in `sysmon/`:
 
-## Sécurité (rappel pour un usage au-delà de la démo locale)
+```
+Sysmon64.exe -accepteula -i path\to\sysmon\sysmonconfig.xml
+```
 
-Les mots de passe par défaut (`SecretPassword`, `kibanaserver`, `MyS3cr37P450r.*-`) sont ceux du
-dépôt officiel Wazuh, faits pour un premier démarrage. Comme ce déploiement reste local et n'est
-jamais exposé publiquement, ils sont laissés tels quels pour la démo, à changer via l'outil
-`wazuh-passwords-tool` si le projet devait un jour être exposé au-delà de `localhost`.
+**Wazuh agent**, pointing at the local manager:
+
+```
+msiexec.exe /i wazuh-agent-4.14.7-1.msi /q WAZUH_MANAGER="127.0.0.1" WAZUH_REGISTRATION_SERVER="127.0.0.1"
+net start WazuhSvc
+```
+
+Sysmon events are not collected by default. The shared `config/agent.conf` adds the
+`Microsoft-Windows-Sysmon/Operational` channel, which is why `deploy-config.sh` has to run before
+the agent will report anything useful.
+
+Check the agent is connected with:
+
+```bash
+docker compose exec wazuh.manager /var/ossec/bin/agent_control -l
+```
+
+## Noisy modules are off
+
+Compliance scanning (SCA) and vulnerability detection are disabled, both on the manager
+(`ossec.conf`) and on the agent (`config/agent.conf`). Each raises one alert per failed check or per
+CVE, hundreds within minutes, all above the webhook threshold. Turning either back on without a
+tighter integration filter will flood the triage pipeline. See `docs/decisions.md`.
+
+## Security note
+
+The default passwords (`SecretPassword`, `kibanaserver`, `MyS3cr37P450r.*-`) are the ones shipped by
+the official Wazuh repository for first startup. This deployment stays on localhost and is never
+exposed, so they are left as they are. Change them with `wazuh-passwords-tool` before exposing
+anything beyond `localhost`.

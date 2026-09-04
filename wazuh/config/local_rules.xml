@@ -1,12 +1,11 @@
 <!--
-  Custom Wazuh rules, written for this project, matching the 3 attack simulation scripts in
-  attacks/. Local IDs (100xxx range, Wazuh convention for user-defined rules) rather than relying
-  on the default Sysmon ruleset directly: field names/structure were confirmed against real
-  Sysmon events captured on this machine (see docs/decisions.md), but a couple of the built-in
-  Sysmon Event ID 1 rules (e.g. 92057, encoded PowerShell command) did not fire reliably against
-  this Wazuh version's classification chain for reasons not fully root-caused. Writing our own,
-  simpler, self-contained rules sidesteps that and keeps this project's "understand and control
-  what runs" pattern (see docs/decisions.md for the same reasoning behind the custom MCP servers).
+  Custom Wazuh rules covering the three attack scenarios in attacks/, plus one false positive
+  suppression. Local IDs (100xxx range, the Wazuh convention for user-defined rules).
+
+  These are bound to the "windows" group rather than the Sysmon event groups, because the
+  sysmon_event_13 group is never assigned by this Wazuh version, which silently disables the
+  built-in rules that depend on it. Field names and structure were taken from real Sysmon events
+  captured on the host. See docs/decisions.md.
 -->
 <group name="local,soc_triage_demo,">
 
@@ -32,26 +31,21 @@
     </mitre>
   </rule>
 
-  <!-- Suppression de faux positif. La règle intégrée 92213 ("Executable file dropped in folder
-       commonly used by malware", niveau 15) se déclenche sur les fichiers __PSScriptPolicyTest_*.ps1
-       que PowerShell crée lui-même dans %TEMP% pour vérifier la politique d'exécution, à chaque
-       lancement de script. Sans cette suppression, chaque exécution d'un script légitime génère une
-       alerte de niveau 15 qui déclenche l'agent de triage et consomme du quota LLM pour rien.
-       Niveau 0 = évènement conservé dans les logs mais non alerté. -->
+  <!-- False positive suppression. Built-in rule 92213 ("Executable file dropped in folder commonly
+       used by malware", level 15) fires on the __PSScriptPolicyTest_*.ps1 files PowerShell itself
+       writes to %TEMP% to check the execution policy, on every script launch. Without this, running
+       any legitimate script raises a level 15 alert and wakes the triage agent for nothing.
+       Level 0 means the event is still logged, just not alerted on. -->
   <rule id="100010" level="0">
     <if_sid>92213</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
-    <description>Faux positif supprime : fichier temporaire de test de politique PowerShell</description>
+    <description>Suppressed false positive: PowerShell execution policy test file</description>
   </rule>
 
-  <!-- Note sur l'echappement : Wazuh stocke les chemins Windows du champ targetObject avec les
-       backslashes doubles. Un regex ecrit avec \\ (un backslash litteral) ne matche donc jamais,
-       il faut \\\\ (deux backslashes litteraux). Le ruleset officiel applique la meme convention,
-       voir la regle integree 92300 dans 0860-sysmon_id_13.xml. Cause identifiee par bissection,
-       voir docs/decisions.md.
-       A noter aussi : le groupe sysmon_event_13 n'est jamais assigne par cette version de Wazuh,
-       ce qui neutralise les regles integrees qui en dependent (92300/92301). D'ou le rattachement
-       au groupe windows, verifie fonctionnel. -->
+  <!-- Escaping note: Wazuh stores Windows paths in targetObject with doubled backslashes, so a
+       regex written with \\ (one literal backslash) never matches. It needs \\\\ (two literal
+       backslashes). The official ruleset follows the same convention, see built-in rule 92300 in
+       0860-sysmon_id_13.xml. -->
   <rule id="100003" level="12">
     <if_group>windows</if_group>
     <field name="win.system.channel">^Microsoft-Windows-Sysmon/Operational$</field>
