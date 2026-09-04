@@ -99,3 +99,33 @@ correspond exactement à ce que la règle attend (vérifié champ par champ), ma
 ni la règle intégrée équivalente (92300/92301) ne se déclenchent pour ce cas précis, pour une
 raison non identifiée à ce stade. À reprendre en Phase 5 si le temps le permet, sinon documenté
 comme limitation connue plutôt que laissé silencieux.
+
+## 2026-09-04 : Garde-fou anti-flood dans le workflow n8n, et bug persistant du schéma de sortie
+
+**Contexte** : suite à l'incident de flood SCA/CVE (voir plus haut, confirmé par le tableau de bord
+d'usage de la clé API Gemini : ~400 requêtes, dont des erreurs 429 TooManyRequests, en quelques
+minutes), la demande explicite était d'éviter que ce type de problème bloque le projet pour le
+reste d'une journée à l'avenir.
+
+**Décision** : ajouter un coupe-circuit directement dans le workflow n8n (`Rate Limit Guard`, un
+node Code qui plafonne les appels à 20 par fenêtre glissante de 24h via les données statiques du
+workflow, indépendant de la config Wazuh) plutôt que de compter uniquement sur la discipline
+manuelle ou la config côté SIEM. Défense en profondeur : même si le filtre d'alertes Wazuh était
+mal reconfiguré à nouveau, ce garde-fou empêcherait un nouveau flood de vider le quota. Confirmé
+fonctionnel par test réel (`withinLimit: true`, comptage correct, routage conditionnel correct).
+
+**Problème rencontré en cours de route, à noter pour la suite** : plusieurs heures passées à
+corriger un souci persistant où le node "Triage Verdict Schema" retombe sur son schéma d'exemple
+par défaut (`state`/`cities`) au lieu du schéma custom (`severity`/`verdict`/`action`/...),
+apparemment à chaque fois que le workflow est modifié via l'interface n8n (lier une credential,
+publier). Plusieurs approches tentées (patch direct en base, republication CLI, réimport propre,
+synchronisation manuelle des tables de versioning internes de n8n) : aucune n'a résolu le problème
+de façon durable, et la manipulation directe des tables internes de n8n (`workflow_history`,
+`workflow_entity.versionId`/`activeVersionId`, `webhook_entity`) s'est avérée plus fragile que
+prévu, causant elle-même d'autres pannes (route de webhook cassée, erreur 500). La chaîne complète
+fonctionne mécaniquement (webhook, garde-fou, agent, outils MCP, Slack), seul ce champ de schéma
+pose problème. Piste à essayer en priorité la prochaine fois : `schemaType: "fromJson"` (générer
+le schéma depuis un exemple) plutôt que `"manual"`, qui pourrait être moins sujet à ce
+comportement. Éviter la chirurgie de base de données sur les tables de versioning n8n à l'avenir :
+la republication via l'interface utilisateur, bien que plus lente, s'est révélée être la seule
+méthode fiable à 100% sur l'ensemble de la session.

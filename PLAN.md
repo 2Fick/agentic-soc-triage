@@ -46,10 +46,17 @@
 - [ ] T1547.001 (clé de registre Run) : ne se déclenche pas malgré une structure d'événement
       conforme à ce que la règle attend, cause non identifiée. Limitation connue, voir
       `docs/decisions.md`.
-- [ ] Test de bout en bout avec l'agent Gemini (bloqué par le quota épuisé, voir Phase 3).
-- [ ] Incident important géré en cours de route : flood de ~330 exécutions n8n causé par le module
+- [x] Incident important géré en cours de route : flood de ~330 exécutions n8n causé par le module
       SCA de Wazuh (une alerte par contrôle de conformité échoué), corrigé en désactivant SCA et
       la détection de vulnérabilités. Voir `docs/decisions.md`.
+- [x] Garde-fou anti-flood ajouté dans le workflow lui-même (node "Rate Limit Guard", 20
+      appels/24h max), testé et confirmé fonctionnel.
+- [x] Chaîne complète confirmée fonctionnelle de bout en bout (webhook -> garde-fou -> agent
+      Gemini -> outils MCP -> Slack), quota reconstitué et vrai run réussi.
+- [ ] Bug persistant : le schéma de sortie structuré (`Triage Verdict Schema`) retombe sur son
+      exemple par défaut après toute modification du workflow via l'UI n8n. Non résolu malgré
+      plusieurs tentatives, voir `docs/decisions.md` pour la piste à essayer en priorité
+      (`schemaType: "fromJson"`).
 
 ## Phase 5 : Documentation / démo CV
 - [ ] README complet avec architecture, captures d'écran, verdicts d'exemple.

@@ -16,11 +16,61 @@
       }
     },
     {
+      "id": "21c4da82-651d-494a-b38c-e092b4de437e",
+      "name": "Rate Limit Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "notes": "Hard cap on Gemini calls per rolling 24h window, kept even if the Wazuh-side alert filter is ever misconfigured again. See docs/decisions.md for the incident that motivated this.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst windowMs = 24 * 60 * 60 * 1000; // 24h rolling window\nconst maxPerWindow = 20; // adjust to match the actual Gemini free-tier daily quota\n\nif (!staticData.alertTimestamps) staticData.alertTimestamps = [];\nstaticData.alertTimestamps = staticData.alertTimestamps.filter((t) => now - t < windowMs);\n\nconst withinLimit = staticData.alertTimestamps.length < maxPerWindow;\nif (withinLimit) staticData.alertTimestamps.push(now);\n\nconst item = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    _rateLimit: {\n      withinLimit,\n      countInWindow: staticData.alertTimestamps.length,\n      maxPerWindow,\n    },\n  },\n}];"
+      }
+    },
+    {
+      "id": "f7415b40-2e76-4ca8-be88-ca23b562bc92",
+      "name": "IF Rate Limit OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [400, 300],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json._rateLimit.withinLimit }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8a7a3932-d685-45a0-a3fc-c075927f81b6",
+      "name": "Rate Limit Notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"text\": \"Rate limit atteint (\" + $json._rateLimit.maxPerWindow + \" alertes / 24h) : cette alerte n'a pas ete envoyee a l'agent, pour proteger le quota Gemini. Verifier Wazuh directement.\" } }}",
+        "options": {}
+      }
+    },
+    {
       "id": "5e5c9c4e-1827-47b3-aacc-6ce1e2a3363f",
       "name": "Triage Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
-      "position": [400, 300],
+      "position": [620, 300],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000,
@@ -38,7 +88,7 @@
       "name": "Gemini Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
-      "position": [340, 520],
+      "position": [560, 520],
       "parameters": {
         "modelName": "models/gemini-3.6-flash"
       },
@@ -54,7 +104,7 @@
       "name": "VirusTotal MCP",
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
-      "position": [180, 560],
+      "position": [400, 560],
       "parameters": {
         "endpointUrl": "http://localhost:3001/mcp",
         "serverTransport": "httpStreamable",
@@ -66,7 +116,7 @@
       "name": "AbuseIPDB MCP",
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
-      "position": [500, 560],
+      "position": [720, 560],
       "parameters": {
         "endpointUrl": "http://localhost:3002/mcp",
         "serverTransport": "httpStreamable",
@@ -78,7 +128,7 @@
       "name": "Triage Verdict Schema",
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.3,
-      "position": [660, 520],
+      "position": [880, 520],
       "parameters": {
         "schemaType": "manual",
         "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"severity\": { \"type\": \"string\", \"enum\": [\"low\", \"medium\", \"high\", \"critical\"] },\n    \"verdict\": { \"type\": \"string\", \"enum\": [\"benign\", \"suspicious\", \"malicious\", \"needs_human_review\"] },\n    \"action\": { \"type\": \"string\", \"enum\": [\"auto_close\", \"escalate\"] },\n    \"summary\": { \"type\": \"string\" },\n    \"reasoning\": { \"type\": \"string\" }\n  },\n  \"required\": [\"severity\", \"verdict\", \"action\", \"summary\", \"reasoning\"]\n}"
@@ -89,7 +139,7 @@
       "name": "Post to Slack",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [800, 300],
+      "position": [1020, 300],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.SLACK_WEBHOOK_URL }}",
@@ -103,7 +153,16 @@
   ],
   "connections": {
     "Wazuh Alert Webhook": {
-      "main": [[{ "node": "Triage Agent", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Rate Limit Guard", "type": "main", "index": 0 }]]
+    },
+    "Rate Limit Guard": {
+      "main": [[{ "node": "IF Rate Limit OK", "type": "main", "index": 0 }]]
+    },
+    "IF Rate Limit OK": {
+      "main": [
+        [{ "node": "Triage Agent", "type": "main", "index": 0 }],
+        [{ "node": "Rate Limit Notice", "type": "main", "index": 0 }]
+      ]
     },
     "Triage Agent": {
       "main": [[{ "node": "Post to Slack", "type": "main", "index": 0 }]]
