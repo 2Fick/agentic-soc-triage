@@ -131,7 +131,7 @@
       "position": [880, 520],
       "parameters": {
         "schemaType": "manual",
-        "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"severity\": { \"type\": \"string\", \"enum\": [\"low\", \"medium\", \"high\", \"critical\"] },\n    \"verdict\": { \"type\": \"string\", \"enum\": [\"benign\", \"suspicious\", \"malicious\", \"needs_human_review\"] },\n    \"action\": { \"type\": \"string\", \"enum\": [\"auto_close\", \"escalate\"] },\n    \"summary\": { \"type\": \"string\" },\n    \"reasoning\": { \"type\": \"string\" }\n  },\n  \"required\": [\"severity\", \"verdict\", \"action\", \"summary\", \"reasoning\"]\n}"
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"severity\": { \"type\": \"string\", \"enum\": [\"low\", \"medium\", \"high\", \"critical\"] },\n    \"verdict\": { \"type\": \"string\", \"enum\": [\"benign\", \"suspicious\", \"malicious\", \"needs_human_review\"] },\n    \"action\": { \"type\": \"string\", \"enum\": [\"auto_close\", \"escalate\"] },\n    \"summary\": { \"type\": \"string\" },\n    \"reasoning\": { \"type\": \"string\" }\n  },\n  \"required\": [\"severity\", \"verdict\", \"action\", \"summary\", \"reasoning\"]\n}"
       }
     },
     {

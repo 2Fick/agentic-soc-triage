@@ -30,11 +30,10 @@
       webhook reçoit bien l'alerte (`$json.body.alert`), agent appelle les outils MCP avec de
       vraies données (VirusTotal/AbuseIPDB), schéma de sortie structuré correct, message Slack
       envoyé avec succès (execution 4).
-- [ ] Un run complet de bout en bout (webhook -> verdict -> Slack, sans erreur sur aucun maillon)
-      reste à confirmer. Cause probable des erreurs réseau intermittentes rencontrées : le quota
-      gratuit de la clé Gemini épuisé par le flood d'alertes SCA/CVE (voir Phase 4), pas un vrai
-      problème réseau. `retryOnFail` ajouté sur le node agent par précaution. À réessayer une fois
-      le quota reconstitué (le lendemain).
+- [x] Run complet de bout en bout confirmé : webhook -> garde-fou -> agent Gemini -> outils MCP
+      (VirusTotal + AbuseIPDB) -> verdict structuré -> Slack. Les erreurs réseau intermittentes
+      rencontrées la veille venaient du quota Gemini épuisé par le flood d'alertes SCA/CVE (voir
+      Phase 4), pas d'un vrai problème réseau. `retryOnFail` conservé sur le node agent.
 
 ## Phase 4 : Tests d'attaque simulée - construit, 2/3 détections confirmées
 - [x] 3 scénarios écrits (T1059.001, T1053.005, T1547.001), non destructifs, auto-nettoyants,
@@ -53,10 +52,9 @@
       appels/24h max), testé et confirmé fonctionnel.
 - [x] Chaîne complète confirmée fonctionnelle de bout en bout (webhook -> garde-fou -> agent
       Gemini -> outils MCP -> Slack), quota reconstitué et vrai run réussi.
-- [ ] Bug persistant : le schéma de sortie structuré (`Triage Verdict Schema`) retombe sur son
-      exemple par défaut après toute modification du workflow via l'UI n8n. Non résolu malgré
-      plusieurs tentatives, voir `docs/decisions.md` pour la piste à essayer en priorité
-      (`schemaType: "fromJson"`).
+- [x] Schéma de sortie structuré corrigé : le paramètre s'appelle `inputSchema` (et non
+      `jsonSchema`) à partir de la typeVersion 1.2 du node. Verdict complet et correctement
+      structuré confirmé en test réel, voir `docs/decisions.md`.
 
 ## Phase 5 : Documentation / démo CV
 - [ ] README complet avec architecture, captures d'écran, verdicts d'exemple.

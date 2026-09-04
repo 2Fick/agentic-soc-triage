@@ -114,18 +114,32 @@ manuelle ou la config côté SIEM. Défense en profondeur : même si le filtre d
 mal reconfiguré à nouveau, ce garde-fou empêcherait un nouveau flood de vider le quota. Confirmé
 fonctionnel par test réel (`withinLimit: true`, comptage correct, routage conditionnel correct).
 
-**Problème rencontré en cours de route, à noter pour la suite** : plusieurs heures passées à
-corriger un souci persistant où le node "Triage Verdict Schema" retombe sur son schéma d'exemple
-par défaut (`state`/`cities`) au lieu du schéma custom (`severity`/`verdict`/`action`/...),
-apparemment à chaque fois que le workflow est modifié via l'interface n8n (lier une credential,
-publier). Plusieurs approches tentées (patch direct en base, republication CLI, réimport propre,
-synchronisation manuelle des tables de versioning internes de n8n) : aucune n'a résolu le problème
-de façon durable, et la manipulation directe des tables internes de n8n (`workflow_history`,
-`workflow_entity.versionId`/`activeVersionId`, `webhook_entity`) s'est avérée plus fragile que
-prévu, causant elle-même d'autres pannes (route de webhook cassée, erreur 500). La chaîne complète
-fonctionne mécaniquement (webhook, garde-fou, agent, outils MCP, Slack), seul ce champ de schéma
-pose problème. Piste à essayer en priorité la prochaine fois : `schemaType: "fromJson"` (générer
-le schéma depuis un exemple) plutôt que `"manual"`, qui pourrait être moins sujet à ce
-comportement. Éviter la chirurgie de base de données sur les tables de versioning n8n à l'avenir :
-la republication via l'interface utilisateur, bien que plus lente, s'est révélée être la seule
-méthode fiable à 100% sur l'ensemble de la session.
+## 2026-09-04 : Schéma de sortie structuré, mauvais nom de paramètre
+
+**Symptôme** : le node "Triage Verdict Schema" retombait systématiquement sur son schéma d'exemple
+par défaut (`state`/`cities`) au lieu du schéma custom (`severity`/`verdict`/`action`/...), rendant
+les messages Slack inutilisables (champs `undefined`). Plusieurs heures perdues à soupçonner un
+bug de l'interface n8n qui réinitialiserait le champ, puis à tenter des contournements par
+manipulation directe de la base (patch des tables, republication CLI, réimport, synchronisation
+manuelle des tables de versioning). Ces tentatives ont elles-mêmes cassé d'autres choses au
+passage (route de webhook corrompue, erreur 500 sur le webhook), sans jamais résoudre le symptôme.
+
+**Cause réelle** : erreur de nom de paramètre dans le JSON du workflow. En lisant le code source du
+node (`OutputParserStructured.node.js`), la résolution est explicite :
+
+```js
+if (this.getNode().typeVersion <= 1.1) { inputSchema = getNodeParameter('jsonSchema', ...); }
+else                                   { inputSchema = getNodeParameter('inputSchema', ...); }
+```
+
+Le workflow déclare le node en `typeVersion: 1.3` et le paramètre était nommé `jsonSchema`, valide
+uniquement jusqu'à la version 1.1. Le node ignorait donc silencieusement le champ et appliquait sa
+valeur par défaut. Renommer le paramètre en `inputSchema` a résolu le problème immédiatement.
+
+**Leçon** : vérifier le nom exact des paramètres dans le code source du node pour la `typeVersion`
+utilisée, au lieu de le deviner. Les paramètres inconnus ne provoquent aucune erreur dans n8n, ils
+sont ignorés en silence et la valeur par défaut s'applique, ce qui produit un symptôme trompeur
+qui ressemble à un bug de l'outil. Corollaire : avant de conclure à un bug d'un outil largement
+utilisé, remettre en cause sa propre configuration d'abord. Second corollaire : ne pas contourner
+le système de versioning interne de n8n par des écritures SQL directes, ça masque le problème réel
+et en crée de nouveaux.
