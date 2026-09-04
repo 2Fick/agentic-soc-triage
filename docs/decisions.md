@@ -136,6 +136,33 @@ Le workflow déclare le node en `typeVersion: 1.3` et le paramètre était nomm�
 uniquement jusqu'à la version 1.1. Le node ignorait donc silencieusement le champ et appliquait sa
 valeur par défaut. Renommer le paramètre en `inputSchema` a résolu le problème immédiatement.
 
+## 2026-09-04 : Résolution de la détection T1547.001 (clé de registre Run)
+
+**Contexte** : cette règle était la seule des trois à ne pas se déclencher, malgré un événement
+Sysmon correctement capturé et une structure de champs conforme à ce que la règle attendait. Elle
+avait été documentée comme limitation connue faute de cause identifiée.
+
+**Méthode** : bissection en déployant deux règles de diagnostic temporaires au niveau 5,
+c'est-à-dire sous le seuil de déclenchement de l'intégration n8n, pour observer sans consommer de
+quota LLM. Une règle testant uniquement `if_group windows` + eventID 13, une autre testant
+`if_group sysmon_event_13`. Résultat : la première se déclenche, la seconde jamais. La
+classification de base fonctionne donc, l'échec venait de la dernière condition, le regex.
+
+**Cause** : Wazuh stocke les chemins Windows du champ `targetObject` avec les backslashes doublés.
+Le regex `\\CurrentVersion\\Run\\`, qui matche un backslash simple, ne correspond donc jamais. Il
+faut `\\\\CurrentVersion\\\\Run\\\\`. Le ruleset officiel applique la même convention, visible dans
+la règle intégrée 92300 qui avait été lue pendant l'investigation sans que la conséquence en soit
+tirée.
+
+**Effet de bord découvert** : le groupe `sysmon_event_13` n'est jamais assigné par cette version de
+Wazuh, ce qui neutralise silencieusement toutes les règles intégrées qui en dépendent, dont
+92300 et 92301 pour la persistance par clé de registre. Un déploiement Wazuh par défaut ne détecte
+donc pas cette technique, ce qui justifie a posteriori le choix d'écrire des règles custom
+rattachées au groupe `windows`, vérifié fonctionnel.
+
+**Résultat** : les trois techniques simulées sont détectées, chacune produisant exactement une
+alerte de niveau 12 correctement taguée MITRE ATT&CK.
+
 ## 2026-09-04 : Tuning de faux positif et limitation du rythme d'appels
 
 **Faux positif identifié** : la règle intégrée 92213 (« Executable file dropped in folder commonly

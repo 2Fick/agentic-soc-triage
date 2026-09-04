@@ -78,9 +78,20 @@ niveaux : désactivation des modules bruyants, remontée du seuil de déclenchem
 coupe-circuit dans le workflow lui-même qui plafonne les appels indépendamment de la configuration
 du SIEM.
 
-**Règles de détection custom.** Le ruleset Wazuh par défaut ne couvrait pas de façon fiable les
-techniques testées via Sysmon. Trois règles ont été écrites (`wazuh/config/local_rules.xml`) à
-partir de la structure réelle des événements capturés sur la machine.
+**Règles de détection custom, et une lacune du ruleset par défaut.** Les trois techniques sont
+couvertes par des règles écrites à la main (`wazuh/config/local_rules.xml`) à partir de la structure
+réelle des événements capturés. En investiguant pourquoi la détection de persistance par clé de
+registre ne se déclenchait pas, il est apparu que le groupe `sysmon_event_13` n'est jamais assigné
+par cette version de Wazuh, ce qui neutralise silencieusement les règles intégrées qui en dépendent
+(92300 et 92301). Autrement dit, un déploiement Wazuh par défaut ne détecte pas cette technique.
+Diagnostic mené par bissection avec des règles temporaires placées sous le seuil de déclenchement,
+pour ne pas consommer de quota LLM pendant le débogage.
+
+**Tuning de faux positif.** La règle intégrée 92213 se déclenche au niveau 15 sur les fichiers
+`__PSScriptPolicyTest_*.ps1` que PowerShell écrit lui-même dans `%TEMP%` à chaque lancement de
+script. Résultat : exécuter n'importe quel script légitime déclenchait l'agent de triage. Une règle
+de suppression ramène le signal à l'essentiel, une exécution de scénario produit désormais
+exactement une alerte, la bonne.
 
 ## Stack
 
@@ -149,9 +160,6 @@ docs/          journal des décisions de design et des incidents
 
 Documentées plutôt que passées sous silence :
 
-- **T1547.001 (clé de registre Run)** : l'événement Sysmon est bien capturé et correspond à ce que
-  la règle attend, mais celle-ci ne se déclenche pas, cause non identifiée. Les deux autres
-  techniques sont détectées correctement.
 - **Palier gratuit Gemini** : quota quotidien limité. Le coupe-circuit protège contre son
   épuisement accidentel, mais un usage réel en production nécessiterait un palier payant.
 - **Déploiement single-node**, mots de passe Wazuh par défaut : adapté à une démonstration locale,

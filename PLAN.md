@@ -40,11 +40,11 @@
       voir `attacks/README.md`.
 - [x] Règles de détection custom écrites (`wazuh/config/local_rules.xml`) après avoir vérifié que
       le ruleset par défaut ne couvrait pas fiablement tous les cas.
-- [x] T1059.001 (PowerShell encodé) et T1053.005 (tâche planifiée) : détection confirmée, vraies
-      alertes de niveau 12 avec tags MITRE ATT&CK corrects.
-- [ ] T1547.001 (clé de registre Run) : ne se déclenche pas malgré une structure d'événement
-      conforme à ce que la règle attend, cause non identifiée. Limitation connue, voir
-      `docs/decisions.md`.
+- [x] Les 3 techniques détectées, chacune produisant exactement une alerte de niveau 12 avec le
+      tag MITRE ATT&CK correct.
+- [x] T1547.001 (clé de registre Run) : détection résolue. Cause : échappement des backslashes dans
+      le champ targetObject (Wazuh les stocke doublés). Découverte au passage : le groupe
+      sysmon_event_13 n'est jamais assigné, neutralisant les règles intégrées. Voir `docs/decisions.md`.
 - [x] Incident important géré en cours de route : flood de ~330 exécutions n8n causé par le module
       SCA de Wazuh (une alerte par contrôle de conformité échoué), corrigé en désactivant SCA et
       la détection de vulnérabilités. Voir `docs/decisions.md`.
