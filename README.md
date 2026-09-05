@@ -69,28 +69,28 @@ and escalates. When in doubt, a human decides.
 An attack plants a scheduled task for persistence, MITRE T1053.005. The script is non-destructive
 and cleans up after itself.
 
-<p align="center"><img src="docs/images/attack-terminal.jpg" width="780"></p>
+<p align="center"><img src="docs/images/attack-terminal.png" width="780"></p>
 
 A real workstation is loud. Unfiltered, Wazuh shows 1,665 events in 24 hours; the custom rule brings
 that to the 7 belonging to the attack.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/wazuh-unfiltered.jpg" alt="1,665 alerts unfiltered"></td>
-<td width="50%"><img src="docs/images/wazuh-filtered.jpg" alt="7 alerts after filtering"></td>
+<td width="50%"><img src="docs/images/wazuh-unfiltered.png" alt="1,665 alerts unfiltered"></td>
+<td width="50%"><img src="docs/images/wazuh-filtered.png" alt="7 alerts after filtering"></td>
 </tr>
 </table>
 
 Every alert ends in Slack. Routine false positives close themselves in green, the real persistence
 attempt is escalated in red.
 
-<p align="center"><img src="docs/images/slack-verdicts.jpg" width="780"></p>
+<p align="center"><img src="docs/images/slack-verdicts.png" width="780"></p>
 
 <details>
 <summary>More screenshots: the matching events and the n8n workflow</summary>
 <br>
-<p align="center"><img src="docs/images/wazuh-events.jpg" width="820"></p>
-<p align="center"><img src="docs/images/n8n-workflow.jpg" width="860"></p>
+<p align="center"><img src="docs/images/wazuh-events.png" width="820"></p>
+<p align="center"><img src="docs/images/n8n-workflow.png" width="860"></p>
 </details>
 
 ## Run it
