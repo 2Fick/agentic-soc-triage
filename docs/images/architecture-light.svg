@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 380" width="1080" height="380" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" role="img" aria-label="Pipeline architecture: a Windows host feeds Wazuh, alerts pass through a triage cascade, ambiguous ones reach an AI agent that calls threat intelligence tools over MCP, and the verdict lands in Slack">
+
+  <g stroke="#afb8c1" stroke-width="2" fill="none">
+    <path d="M170 180 H205"/>
+    <path d="M355 180 H390"/>
+    <path d="M555 180 C600 180 605 93 650 93"/>
+    <path d="M850 93 C895 93 900 180 940 180"/>
+    <path d="M685 126 V150" stroke-dasharray="4 4"/>
+    <path d="M825 126 V150" stroke-dasharray="4 4"/>
+    <path d="M472 212 V318 H1000 V212" stroke-dasharray="7 7"/>
+  </g>
+
+  <g fill="#3fb950">
+    <circle r="5" opacity="0"><animateMotion dur="4s" repeatCount="indefinite" path="M170 180 H205"/><animate attributeName="opacity" values="1;1" dur="4s" repeatCount="indefinite"/></circle>
+    <circle r="5" opacity="0"><animateMotion dur="4s" begin="0.35s" repeatCount="indefinite" path="M355 180 H390"/><animate attributeName="opacity" values="1;1" dur="4s" begin="0.35s" repeatCount="indefinite"/></circle>
+    <circle r="5" opacity="0"><animateMotion dur="4s" begin="0.8s" repeatCount="indefinite" path="M555 180 C600 180 605 93 650 93"/><animate attributeName="opacity" values="1;1" dur="4s" begin="0.8s" repeatCount="indefinite"/></circle>
+    <circle r="5" opacity="0"><animateMotion dur="4s" begin="1.9s" repeatCount="indefinite" path="M850 93 C895 93 900 180 940 180"/><animate attributeName="opacity" values="1;1" dur="4s" begin="1.9s" repeatCount="indefinite"/></circle>
+  </g>
+  <circle r="4.5" fill="#59636e" opacity="0">
+    <animateMotion dur="4s" begin="1.2s" repeatCount="indefinite" path="M472 212 V318 H1000 V212"/>
+    <animate attributeName="opacity" values="1;1" dur="4s" begin="1.2s" repeatCount="indefinite"/>
+  </circle>
+  <g>
+    <rect x="20" y="148" width="150" height="64" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="95" y="176" text-anchor="middle" fill="#1f2328" font-size="16" font-weight="600">Windows host</text>
+    <text x="95" y="196" text-anchor="middle" fill="#59636e" font-size="12.5">Sysmon + agent</text>
+
+    <rect x="205" y="148" width="150" height="64" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="280" y="176" text-anchor="middle" fill="#1f2328" font-size="16" font-weight="600">Wazuh</text>
+    <text x="280" y="196" text-anchor="middle" fill="#59636e" font-size="12.5">detection rules</text>
+
+    <rect x="390" y="148" width="165" height="64" rx="12" fill="#ffffff" stroke="#3fb950" stroke-width="1.8"/>
+    <text x="472" y="176" text-anchor="middle" fill="#1f2328" font-size="16" font-weight="600">Triage cascade</text>
+    <text x="472" y="196" text-anchor="middle" fill="#59636e" font-size="12.5">dedup, filter, guard</text>
+
+    <rect x="650" y="60" width="200" height="66" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="750" y="88" text-anchor="middle" fill="#1f2328" font-size="16" font-weight="600">AI agent</text>
+    <text x="750" y="108" text-anchor="middle" fill="#59636e" font-size="12.5">Gemini, chooses its own tools</text>
+
+    <rect x="620" y="150" width="130" height="38" rx="9" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="685" y="174" text-anchor="middle" fill="#59636e" font-size="12.5">VirusTotal</text>
+    <rect x="760" y="150" width="130" height="38" rx="9" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="825" y="174" text-anchor="middle" fill="#59636e" font-size="12.5">AbuseIPDB</text>
+
+    <rect x="940" y="148" width="120" height="64" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="1000" y="176" text-anchor="middle" fill="#1f2328" font-size="16" font-weight="600">Slack</text>
+    <text x="1000" y="196" text-anchor="middle" fill="#59636e" font-size="12.5">verdict</text>
+  </g>
+
+  <text x="280" y="136" text-anchor="middle" fill="#7d8590" font-size="12">alerts at level 10+</text>
+  <text x="755" y="212" text-anchor="middle" fill="#7d8590" font-size="11.5">threat intel over MCP</text>
+  <text x="736" y="342" text-anchor="middle" fill="#7d8590" font-size="12.5">most alerts settle here, with no model call</text>
+</svg>

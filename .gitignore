@@ -15,3 +15,6 @@ attacks/*-marker.txt
 
 # Local screen recordings, not distributed with the project
 screencasts/
+
+# Personal interview preparation, never published
+interview-prep/
