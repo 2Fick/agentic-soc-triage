@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 215" width="200" height="215" role="img" aria-label="Sentinel, the project mascot">
+  <g>
+    <!-- gentle idle bob, the whole character -->
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 0 -6; 0 0" keyTimes="0;0.5;1"
+      calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"
+      dur="4.5s" repeatCount="indefinite"/>
+
+    <!-- antenna, with a pulsing status light -->
+    <line x1="100" y1="36" x2="100" y2="20" stroke="#f2ecdf" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="100" cy="15" r="6" fill="#3fb950">
+      <animate attributeName="opacity" values="1;0.25;1" keyTimes="0;0.5;1" dur="2.2s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- body -->
+    <rect x="34" y="38" width="132" height="124" rx="24" fill="#f2ecdf"/>
+    <rect x="22" y="78" width="12" height="34" rx="6" fill="#f2ecdf"/>
+    <rect x="166" y="78" width="12" height="34" rx="6" fill="#f2ecdf"/>
+    <rect x="62" y="162" width="20" height="18" rx="8" fill="#f2ecdf"/>
+    <rect x="118" y="162" width="20" height="18" rx="8" fill="#f2ecdf"/>
+
+    <!-- radar scope, the face -->
+    <circle cx="100" cy="100" r="46" fill="#0d1117"/>
+    <circle cx="100" cy="100" r="30" fill="none" stroke="#2c3340" stroke-width="2"/>
+    
+
+    <!-- sweeping beam -->
+    <path d="M100 100 L100 54 A46 46 0 0 1 132 68 Z" fill="#3fb950" opacity="0.5">
+      <animateTransform attributeName="transform" type="rotate"
+        values="0 100 100; 360 100 100" dur="3.4s" repeatCount="indefinite"/>
+    </path>
+
+    <!-- a contact the sweep picks up, then loses -->
+    <circle cx="122" cy="80" r="5" fill="#f85149">
+      <animate attributeName="opacity" values="0;0;1;0.7;0" keyTimes="0;0.18;0.24;0.55;1"
+        dur="3.4s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- eyes, blinking on their own cycle -->
+    <circle cx="84" cy="100" r="7" fill="#ffffff">
+      <animate attributeName="ry" values="7;7;0.8;7;7" keyTimes="0;0.92;0.955;0.99;1" dur="5.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="116" cy="100" r="7" fill="#ffffff">
+      <animate attributeName="ry" values="7;7;0.8;7;7" keyTimes="0;0.92;0.955;0.99;1" dur="5.6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>

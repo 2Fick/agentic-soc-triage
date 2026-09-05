@@ -1,8 +1,37 @@
-# Agentic SOC Triage
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/sentinel-dark.svg">
+    <img src="docs/images/sentinel-light.svg" alt="Sentinel, the project mascot" width="150">
+  </picture>
+</p>
 
-A detection and automated triage pipeline for SIEM alerts. A simulated attack on a Windows host
-raises a Wazuh alert, which is then enriched and adjudicated by an AI agent that calls threat
-intelligence tools on its own, and posted to Slack with a reasoned verdict.
+<h1 align="center">Agentic SOC Triage</h1>
+
+<p align="center">
+  Autonomous Tier-1 triage for SIEM alerts.<br>
+  An attack on a Windows host raises a Wazuh alert, an AI agent enriches it with threat
+  intelligence tools it calls on its own, and a reasoned verdict lands in Slack.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Wazuh-4.14-3B7DBF?style=flat-square" alt="Wazuh">
+  <img src="https://img.shields.io/badge/n8n-self--hosted-EA4B71?style=flat-square&logo=n8n&logoColor=white" alt="n8n">
+  <img src="https://img.shields.io/badge/MCP-Model_Context_Protocol-1F2328?style=flat-square" alt="MCP">
+  <img src="https://img.shields.io/badge/Gemini-free_tier-8E75B2?style=flat-square&logo=googlegemini&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/Sysmon-Windows-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Sysmon">
+  <img src="https://img.shields.io/badge/MITRE_ATT%26CK-3_techniques-C8102E?style=flat-square" alt="MITRE ATT&CK">
+  <img src="https://img.shields.io/badge/Slack-webhook-4A154B?style=flat-square&logo=slack&logoColor=white" alt="Slack">
+  <img src="https://img.shields.io/badge/cost-%240-2DA44E?style=flat-square" alt="Zero cost">
+</p>
+
+<p align="center">
+  <img src="docs/images/overview.jpg" alt="The full pipeline: Wazuh, n8n, the attack terminal and the Slack verdict" width="900">
+</p>
 
 Built entirely on free, self-hosted tools, to show hands-on command of a modern SOC chain: SIEM,
 SOAR, applied LLM agents, and MCP.
@@ -25,6 +54,43 @@ What makes this example interesting: the agent does not stop at the raw tool out
 intelligence sources report the IP as clean, and concluding "benign, auto-close" would have been
 the easy answer. Instead it catches the behavioural mismatch, a public DNS resolver does not open
 SSH sessions, and escalates. That is the behaviour worth having: when in doubt, a human decides.
+
+## Walkthrough
+
+**1. The attack.** A scheduled task is planted for persistence, MITRE T1053.005. The script is
+non-destructive and cleans up after itself.
+
+<p align="center"><img src="docs/images/attack-terminal.jpg" alt="The attack script creating and removing a scheduled task" width="820"></p>
+
+**2. Detection, and the noise problem.** A real workstation is loud. Left unfiltered, Wazuh shows
+1,665 events over 24 hours. Filtering on the custom rule brings it down to the 7 that correspond to
+the attack.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/wazuh-unfiltered.jpg" alt="Unfiltered Wazuh dashboard, 1665 alerts"></td>
+<td width="50%"><img src="docs/images/wazuh-filtered.jpg" alt="Filtered on the custom rule, 7 alerts"></td>
+</tr>
+<tr>
+<td align="center"><sub>Unfiltered: 1,665 alerts</sub></td>
+<td align="center"><sub>Filtered on rule 100002: 7 alerts, all level 12</sub></td>
+</tr>
+</table>
+
+Each hit carries the technique it maps to, so the alert arrives already labelled.
+
+<p align="center"><img src="docs/images/wazuh-events.jpg" alt="The seven matching events with rule id, level and description" width="820"></p>
+
+**3. Triage.** The alert reaches n8n. The cascade settles what it can on its own; only ambiguous
+alerts reach the agent, which then picks its own tools.
+
+<p align="center"><img src="docs/images/n8n-workflow.jpg" alt="The n8n workflow, from webhook to Slack" width="900"></p>
+
+**4. Verdict.** Every alert ends in Slack with a severity, a decision, and the reasoning behind it.
+Note the mix: routine false positives auto-closed in green, the actual persistence attempt escalated
+in red.
+
+<p align="center"><img src="docs/images/slack-verdicts.jpg" alt="Slack thread with auto-closed and escalated verdicts" width="820"></p>
 
 ## Architecture
 
@@ -156,7 +222,7 @@ n8n/           triage workflow (versioned JSON) and start script
 mcp-servers/   VirusTotal and AbuseIPDB MCP servers
 attacks/       attack simulation scenarios
 sysmon/        Sysmon configuration
-docs/          architecture decision records
+docs/          architecture decision records and screenshots
 ```
 
 ## Known limits
