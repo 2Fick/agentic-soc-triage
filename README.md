@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Wazuh-4.14-3B7DBF?style=flat-square" alt="Wazuh">
-  <img src="https://img.shields.io/badge/n8n-self--hosted-EA4B71?style=flat-square&logo=n8n&logoColor=white" alt="n8n">
-  <img src="https://img.shields.io/badge/MCP-Model_Context_Protocol-1F2328?style=flat-square" alt="MCP">
-  <img src="https://img.shields.io/badge/Gemini-free_tier-8E75B2?style=flat-square&logo=googlegemini&logoColor=white" alt="Gemini">
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/MITRE_ATT%26CK-3_techniques-C8102E?style=flat-square" alt="MITRE ATT&CK">
-  <img src="https://img.shields.io/badge/cost-%240-2DA44E?style=flat-square" alt="Zero cost">
+  <a href="https://wazuh.com/"><img src="https://img.shields.io/badge/SIEM-Wazuh_v4.14-3B7DBF?logo=wazuh&logoColor=white" alt="Wazuh"></a>
+  <a href="https://n8n.io/"><img src="https://img.shields.io/badge/Workflow-n8n-EA4B71?logo=n8n&logoColor=white" alt="n8n"></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/Protocol-MCP-1F2328?logo=anthropic&logoColor=white" alt="Model Context Protocol"></a>
+  <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Model-Gemini_Free-8E75B2?logo=googlegemini&logoColor=white" alt="Google Gemini"></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Deploy-Docker_Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose"></a>
+  <a href="https://attack.mitre.org/"><img src="https://img.shields.io/badge/Framework-MITRE_ATT%26CK-C8102E" alt="MITRE ATT&CK"></a>
+  <img src="https://img.shields.io/badge/Cost-%240_(Free_Tier)-2DA44E" alt="Zero Cost">
 </p>
 
 <p align="center">
